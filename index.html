@@ -225,6 +225,31 @@ tr:hover td.sticky{background:#f8f9fa}
 
 /* Print */
 @media print{#shell,#nav-rail{display:none!important}}
+
+/* Amount input with € prefix */
+.amt-cell{display:flex;align-items:center;gap:3px}
+.amt-cell .sym{color:var(--sub);font-size:12px;flex-shrink:0;font-weight:500}
+.amt-cell input{min-width:80px}
+
+/* Expandable detail row */
+tr.detail-row td{background:#fafbfc;padding:10px 14px}
+.detail-expand-btn{background:none;border:none;cursor:pointer;color:var(--acc);padding:2px 6px;font-size:11px;border-radius:4px;white-space:nowrap}
+.detail-expand-btn:hover{background:#e8f1fd}
+
+/* Week grid */
+.week-nav{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.week-nav .week-label{font-size:14px;font-weight:600;min-width:220px;text-align:center}
+.week-nav button{width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.week-nav button:hover{background:#f0f2f5}
+table.week-grid input[type=number]{width:50px;text-align:center}
+table.week-grid tfoot td{font-weight:700;background:#f0f2f5;padding:8px 10px}
+table.week-grid td.day-we{background:#f8f9fa}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px}
+.tab-btn{padding:8px 18px;border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s}
+.tab-btn.active{color:var(--acc);border-bottom-color:var(--acc)}
+.tab-btn:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -244,6 +269,36 @@ const eurRaw=x=>n(x).toLocaleString('fr-FR',{style:'currency',currency:'EUR',max
 const pct=x=>{const v=n(x);return v===0?'—':v.toFixed(1)+'%'};
 const num2=x=>{const v=n(x);return v===0?'—':v.toFixed(2)};
 const svgIcon=(path,size=16,extra='')=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${path}</svg>`;
+
+// Week helpers
+function getISOWeek(date){
+  const d=new Date(date);d.setHours(0,0,0,0);
+  d.setDate(d.getDate()+4-(d.getDay()||7));
+  const y=d.getFullYear();
+  const start=new Date(y,0,4);
+  return[y,Math.ceil((((d-start)/86400000)+1)/7)];
+}
+function weekKey(date){const[y,w]=getISOWeek(date);return`${y}-W${String(w).padStart(2,'0')}`}
+function weekOf(k){
+  const[y,w]=k.split('-W').map(Number);
+  const jan4=new Date(y,0,4);
+  const mon=new Date(jan4);mon.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(w-1)*7);
+  return mon;
+}
+function weekDays(k){
+  const mon=weekOf(k);
+  const DAYS=['Lu','Ma','Me','Je','Ve','Sa','Di'];
+  const MOIS=['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+  return DAYS.map((l,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return{key:['lu','ma','me','je','ve','sa','di'][i],label:l,num:d.getDate(),month:MOIS[d.getMonth()],we:i>=5};});
+}
+function prevWeek(k){const d=weekOf(k);d.setDate(d.getDate()-7);return weekKey(d)}
+function nextWeek(k){const d=weekOf(k);d.setDate(d.getDate()+7);return weekKey(d)}
+function fmtWeekRange(k){
+  const mon=weekOf(k);const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+  const f=d=>`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(-2)}`;
+  return`${f(mon)} – ${f(sun)}`;
+}
+function isoWeekNum(k){return parseInt(k.split('-W')[1])}
 const ico={
   home:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
   brief:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
@@ -289,7 +344,7 @@ function defaults(){
     jalons:['OS démarrage','Installation terminée','Réception provisoire','Levée réserves','Réception définitive','GPA'].map(nom=>({nom,datePrev:'',dateReel:'',statut:'—'})),
     heures:{budgetTotal:'',txHoraire:'37.3',seuilAlerte:'90',consomme:''},
     heuresEntries:row6(()=>({date:'',categorie:'Compagnon',ouvrage:'',unite:'',nbComp:'',heures:'',qte:'',cadencePrev:''})),
-    reserves:row6((_,i)=>({num:i+1,type:'OPR',lot:'',description:'',entreprise:'',dateConstat:'',dateLeveePrev:'',impact:'',statut:'Ouverte',dateLeveeReel:''})),
+    reserves:row6((_,i)=>({num:i+1,type:'OPR',lot:'',description:'',entreprise:'',dateConstat:'',dateLeveePrev:'',impact:'',statut:'Ouverte',dateLeveeReel:'',detailNote:''})),
     checklistDemarrage:['PPSPS','DC4 sous-traitants','Attestations d\'assurance','Plan d\'installation (PIC)',
       'Plans d\'exécution validés','DICT','Autorisation voirie/arrêté','OS démarrage',
       'Constat contradictoire état des lieux','Planning études/approvisionnement','PAQ',
@@ -301,7 +356,7 @@ function defaults(){
     ].map(item=>({item,done:false,date:'',responsable:'',obs:''})),
     ts:Array.from({length:5},(_,i)=>({
       num:'TS-0'+(i+1),date:'',nature:'',demandeur:'',mtEstime:'',mtAccorde:'',
-      statut:'En attente',impactPlanning:'',impactBudget:'',numAvenant:''
+      statut:'En attente',impactPlanning:'',impactBudget:'',numAvenant:'',detail:''
     })),
     cr:{date:'',type:'Réunion de chantier',presents:'',redacteur:'',diffusion:'',numCR:'',
         avancement:'',phase:'',retards:'',causes:'',actions:'',meteo:'',
@@ -311,6 +366,8 @@ function defaults(){
     crHistorique:Array.from({length:6},(_,i)=>({
       num:'CR-0'+(i+1),date:'',type:'',redacteur:'',presents:'',avancement:'',pointsLeves:'',pointsOuverts:''
     })),
+    compagnons:[],
+    heuresHebdo:{},
     raf:{
       moisRef:'2026-03',cle:'ZAVANC',methode:'Avancement physique',commentaires:'',
       lines:{
@@ -329,7 +386,7 @@ function defaults(){
 // ─── State & persistence ──────────────────────────────────────────────────────
 const KEY='suivi_chantier_sap_portfolio_v1';
 const KEY_OLD='suivi_chantier_sap_v1';
-let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all'};
+let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine'};
 
 function load(){
   try{
@@ -417,6 +474,21 @@ function delChantier(id){
 function setD(path,value){
   const ch=getActive();
   if(!ch)return;
+  // Special case for heuresHebdo: path = "heuresHebdo.YYYY-WNN.compId.day"
+  if(path.startsWith('heuresHebdo.')){
+    const rest=path.slice('heuresHebdo.'.length);
+    // week key contains '-' not '.', compId may contain letters/digits
+    // format: YYYY-WNN.compId.day
+    const m=rest.match(/^(\d{4}-W\d{2})\.([^.]+)\.([^.]+)$/);
+    if(m){
+      const[,wk,cId,day]=m;
+      if(!ch.d.heuresHebdo)ch.d.heuresHebdo={};
+      if(!ch.d.heuresHebdo[wk])ch.d.heuresHebdo[wk]={};
+      if(!ch.d.heuresHebdo[wk][cId])ch.d.heuresHebdo[wk][cId]={};
+      ch.d.heuresHebdo[wk][cId][day]=value===''?0:n(value);
+      save();return;
+    }
+  }
   const parts=path.split('.');
   let obj=ch.d;
   for(let i=0;i<parts.length-1;i++){
@@ -438,8 +510,12 @@ function addRow(listPath){
   const def=defaults();
   let defArr=def;
   for(const k of parts)defArr=defArr[k];
-  obj.push(JSON.parse(JSON.stringify(defArr[0]||{})));
-  if('num' in obj[obj.length-1])obj[obj.length-1].num=obj.length;
+  if(listPath==='compagnons'){
+    obj.push({id:'c'+Date.now(),nom:'',prenom:'',categorie:'Compagnon'});
+  }else{
+    obj.push(JSON.parse(JSON.stringify(defArr[0]||{})));
+    if('num' in obj[obj.length-1])obj[obj.length-1].num=obj.length;
+  }
   save();
   render();
 }
@@ -516,8 +592,12 @@ function summarize(d){
     }
   });
 
+  // Auto avancement from planning
+  const planTaches=d.planning.filter(t=>t.tache);
+  const avAuto=planTaches.length>0?planTaches.reduce((s,t)=>s+n(t.avancement),0)/planTaches.length:av;
+
   return{nom:d.ident.nom||'Sans nom',otp:d.ident.otp,mo:d.ident.mo,chef:d.ident.chef,
-    statut,statutColor,statutBg,marcheActualise,marge,taux,avancement:av,alertCount,retards};
+    statut,statutColor,statutBg,marcheActualise,marge,taux,avancement:avAuto,alertCount,retards};
 }
 
 function computeAll(d){
@@ -551,21 +631,31 @@ function computeAll(d){
     return{...sit,cumul,retard};
   });
 
-  // Heures
-  const hBudg=n(d.heures.budgetTotal);
-  const hConso=n(d.heures.consomme);
+  // Heures — total from weekly grid (heuresHebdo) + manual override
   const txH=n(d.heures.txHoraire)||37.3;
+  const hBudg=n(d.heures.budgetTotal);
+  // Sum all hours from weekly grid
+  let hConsoHebdo=0;
+  const catMap={};
+  Object.values(d.heuresHebdo||{}).forEach(weekData=>{
+    Object.entries(weekData).forEach(([cId,days])=>{
+      const comp=d.compagnons.find(c=>c.id===cId);
+      const cat=comp?comp.categorie:'Compagnon';
+      const h=Object.values(days).reduce((s,v)=>s+n(v),0);
+      hConsoHebdo+=h;
+      catMap[cat]=(catMap[cat]||0)+h;
+    });
+  });
+  // If no weekly data, fall back to legacy heuresEntries
+  d.heuresEntries.forEach(e=>{
+    if(!e.heures)return;
+    if(hConsoHebdo===0){catMap[e.categorie]=(catMap[e.categorie]||0)+n(e.heures);}
+  });
+  const hConso=hConsoHebdo>0?hConsoHebdo:n(d.heures.consomme);
   const hPct=hBudg>0?Math.min(hConso/hBudg*100,100):0;
   const hSolde=hBudg-hConso;
   const hSeuil=n(d.heures.seuilAlerte)||90;
   const hColor=hPct>=100?'#d20a0a':hPct>=hSeuil?'#e76500':'#107e3e';
-
-  // Heures by category
-  const catMap={};
-  d.heuresEntries.forEach(e=>{
-    if(!e.heures)return;
-    catMap[e.categorie]=(catMap[e.categorie]||0)+n(e.heures);
-  });
 
   // ST
   const stReel=cat=>d.st.filter(s=>s.categorie===cat).reduce((s,x)=>s+n(x.mtSit),0);
@@ -633,8 +723,9 @@ function computeAll(d){
   // CR
   const crCount=d.crHistorique.filter(c=>c.type).length;
 
-  // Planning
-  const planAv=d.planning.length?d.planning.reduce((s,t)=>s+n(t.avancement),0)/d.planning.length:0;
+  // Planning — avancement auto from tasks with tache filled
+  const planTachesAll=d.planning.filter(t=>t.tache);
+  const planAv=planTachesAll.length?planTachesAll.reduce((s,t)=>s+n(t.avancement),0)/planTachesAll.length:n(d.ident.avancementLot);
 
   // Alerts
   const alerts=[];
@@ -667,20 +758,24 @@ document.addEventListener('change',e=>{
   if(!name||!getActive())return;
   const val=t.type==='checkbox'?t.checked:t.value;
   setD(name,val);
-  // partial re-renders that affect KPIs / badge colors but don't need full render
-  const kpiScreens=['dashboard','finance','st','fournisseurs','planning','heures','reserves','checklist','ts'];
-  if(kpiScreens.includes(state.screen)){
-    // update shell notif dot without full render
+  // TS: si statut = Refusé → montant accordé = 0
+  if(name.match(/^ts\.\d+\.statut$/)&&val==='Refusé'){
+    const idx=parseInt(name.split('.')[1]);
+    setD(`ts.${idx}.mtAccorde`,'0');
+  }
+  // Réserves: auto-calc impact depuis dates
+  if(name.match(/^reserves\.\d+\.(dateConstat|dateLeveePrev)$/)){
+    const idx=parseInt(name.split('.')[1]);
     const ch=getActive();
     if(ch){
-      const s=summarize(ch.d);
-      const dot=document.querySelector('#shell .notif-dot');
-      if(s.alertCount>0&&!dot){
-        const btn=document.querySelector('#shell .notif-btn');
-        if(btn){const d2=document.createElement('span');d2.className='notif-dot';btn.appendChild(d2);}
-      }else if(dot&&s.alertCount===0)dot.remove();
+      const r=ch.d.reserves[idx];
+      if(r.dateConstat&&r.dateLeveePrev){
+        const diff=Math.round((new Date(r.dateLeveePrev)-new Date(r.dateConstat))/86400000);
+        if(diff>=0)setD(`reserves.${idx}.impact`,String(diff));
+      }
     }
   }
+  render();
 });
 
 document.addEventListener('click',e=>{
@@ -709,6 +804,14 @@ document.addEventListener('click',e=>{
     if(action==='addRow'){addRow(list);return;}
     if(action==='delRow'){delRow(list,idx);return;}
     if(action==='exportCR'){exportCRPdf();return;}
+    if(action==='prevWeek'){state.hWeek=prevWeek(state.hWeek);render();return;}
+    if(action==='nextWeek'){state.hWeek=nextWeek(state.hWeek);render();return;}
+    if(action==='hTab'){state.hTab=val;render();return;}
+    if(action==='toggleDetail'){
+      const row=document.getElementById('detail-row-'+btn.dataset.key);
+      if(row)row.style.display=row.style.display==='none'?'table-row':'none';
+      return;
+    }
     return;
   }
 
@@ -746,7 +849,7 @@ function renderPlanning(d,c){
     return`<tr>
       <td><input type="text" name="planning.${i}.tache" value="${esc(t.tache)}" style="width:160px"></td>
       <td><input type="text" name="planning.${i}.responsable" value="${esc(t.responsable)}" style="width:100px"></td>
-      <td><input type="number" name="planning.${i}.duree" value="${t.duree||''}" style="width:60px"> j</td>
+      <td style="white-space:nowrap"><input type="number" name="planning.${i}.duree" value="${t.duree||''}" style="width:55px"> j</td>
       <td><input type="date" name="planning.${i}.debut" value="${t.debut||''}"></td>
       <td><input type="date" name="planning.${i}.fin" value="${t.fin||''}" style="${overdue?'color:var(--neg)':''}"></td>
       <td style="min-width:120px">
@@ -806,31 +909,72 @@ function renderPlanning(d,c){
 
 // Heures MO
 function renderHeures(d,c){
-  const entryRows=d.heuresEntries.map((e,i)=>{
-    const cadence=e.qte&&e.heures?n(e.qte)/n(e.heures):0;
-    const rendement=e.cadencePrev&&cadence>0?cadence/n(e.cadencePrev)*100:0;
+  const tab=state.hTab||'semaine';
+  const wk=state.hWeek||weekKey(new Date());
+  const days=weekDays(wk);
+  const weekNum=isoWeekNum(wk);
+  const mon=weekOf(wk);
+  const fmtMon=d2=>`${String(d2.getDate()).padStart(2,'0')}/${String(d2.getMonth()+1).padStart(2,'0')}/${d2.getFullYear()}`;
+  const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+
+  // Weekly grid
+  const hebd=d.heuresHebdo||{};
+  const weekData=hebd[wk]||{};
+
+  // Total per day
+  const dayTotals={lu:0,ma:0,me:0,je:0,ve:0,sa:0,di:0};
+  let weekTotal=0;
+  d.compagnons.forEach(comp=>{
+    const cData=weekData[comp.id]||{};
+    days.forEach(day=>{
+      const h=n(cData[day.key]);
+      dayTotals[day.key]+=h;
+      weekTotal+=h;
+    });
+  });
+
+  // Cumul all weeks per compagnon
+  const cumByComp={};
+  Object.values(hebd).forEach(wd=>{
+    Object.entries(wd).forEach(([cId,cdays])=>{
+      cumByComp[cId]=(cumByComp[cId]||0)+Object.values(cdays).reduce((s,v)=>s+n(v),0);
+    });
+  });
+
+  const compRows=d.compagnons.map((comp,ci)=>{
+    const cData=weekData[comp.id]||{};
+    const rowTotal=days.reduce((s,day)=>s+n(cData[day.key]),0);
+    const cumul=cumByComp[comp.id]||0;
     return`<tr>
-      <td><input type="date" name="heuresEntries.${i}.date" value="${e.date||''}"></td>
-      <td><select name="heuresEntries.${i}.categorie">
-        ${['Compagnon','Chef d\'équipe','Intérimaire','Autre'].map(v=>`<option${e.categorie===v?' selected':''}>${v}</option>`).join('')}
+      <td style="white-space:nowrap;font-weight:500">${esc(comp.prenom)} ${esc(comp.nom)}</td>
+      <td><select name="compagnons.${ci}.categorie" style="width:110px">
+        ${['Compagnon','Chef d\'équipe','Intérimaire','Autre'].map(v=>`<option${comp.categorie===v?' selected':''}>${v}</option>`).join('')}
       </select></td>
-      <td><input type="text" name="heuresEntries.${i}.ouvrage" value="${esc(e.ouvrage)}" style="width:130px"></td>
-      <td><input type="text" name="heuresEntries.${i}.unite" value="${esc(e.unite)}" style="width:60px"></td>
-      <td><input type="number" name="heuresEntries.${i}.nbComp" value="${e.nbComp||''}" style="width:50px"></td>
-      <td><input type="number" name="heuresEntries.${i}.heures" value="${e.heures||''}" style="width:60px"></td>
-      <td><input type="number" name="heuresEntries.${i}.qte" value="${e.qte||''}" style="width:60px"></td>
-      <td><input type="number" name="heuresEntries.${i}.cadencePrev" value="${e.cadencePrev||''}" style="width:70px"></td>
-      <td class="auto">${cadence>0?cadence.toFixed(2):'—'}</td>
-      <td class="auto" style="color:${rendement>=100?'var(--pos)':rendement>0?'var(--warn)':'var(--sub)'}">${rendement>0?rendement.toFixed(0)+'%':'—'}</td>
-      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="heuresEntries" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+      ${days.map(day=>`<td class="${day.we?'day-we':''}">
+        <input type="number" name="heuresHebdo.${wk}.${comp.id}.${day.key}" value="${cData[day.key]||''}" min="0" max="24" style="width:46px;text-align:center">
+      </td>`).join('')}
+      <td style="font-weight:700;text-align:right">${rowTotal>0?rowTotal+'h':'—'}</td>
+      <td style="color:var(--sub);text-align:right">${cumul>0?cumul+'h':''}</td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="compagnons" data-idx="${ci}">${svgIcon(ico.trash,13)}</button></td>
     </tr>`;
   }).join('');
+
+  // Compagnons list (tab 2)
+  const compList=d.compagnons.map((comp,ci)=>`<tr>
+    <td><input type="text" name="compagnons.${ci}.prenom" value="${esc(comp.prenom)}" placeholder="Prénom" style="width:110px"></td>
+    <td><input type="text" name="compagnons.${ci}.nom" value="${esc(comp.nom)}" placeholder="Nom" style="width:120px"></td>
+    <td><select name="compagnons.${ci}.categorie">
+      ${['Compagnon','Chef d\'équipe','Intérimaire','Autre'].map(v=>`<option${comp.categorie===v?' selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td style="color:var(--sub)">${(cumByComp[comp.id]||0)>0?(cumByComp[comp.id])+'h total':''}</td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="compagnons" data-idx="${ci}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
 
   const catBars=Object.entries(c.catMap).map(([cat,h])=>`
     <div class="cat-bar">
       <span class="cat-label">${esc(cat)}</span>
       <div class="cat-bg"><div class="cat-fill" style="width:${c.hConso>0?Math.min(h/c.hConso*100,100):0}%"></div></div>
-      <span class="cat-val">${h}h</span>
+      <span class="cat-val">${h.toFixed(0)}h</span>
     </div>
   `).join('');
 
@@ -838,17 +982,16 @@ function renderHeures(d,c){
     <h1 class="page-title">Heures Main d'œuvre</h1>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Budget heures</div><div class="kpi-value">${c.hBudg||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">Consommé</div><div class="kpi-value" style="color:${c.hColor}">${c.hConso||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">Solde</div><div class="kpi-value" style="color:${c.hSolde<0?'var(--neg)':'var(--pos)'}">${c.hBudg?c.hSolde:' —'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
-      <div class="kpi-card"><div class="kpi-label">Avancement budget</div><div class="kpi-value" style="color:${c.hColor}">${c.hBudg?pct(c.hPct):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Consommé (toutes semaines)</div><div class="kpi-value" style="color:${c.hColor}">${c.hConso>0?c.hConso:c.hConso||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Solde</div><div class="kpi-value" style="color:${c.hSolde<0?'var(--neg)':'var(--pos)'}">${c.hBudg?c.hSolde:'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Compagnons actifs</div><div class="kpi-value">${d.compagnons.length}</div></div>
     </div>
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Paramètres heures</div>
+      <div class="card-title">Paramètres</div>
       <div class="param-row">
         <div class="form-field"><label class="form-label">Budget total (h)</label><input type="number" name="heures.budgetTotal" value="${d.heures.budgetTotal||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Taux horaire (€/h)</label><input type="number" name="heures.txHoraire" value="${d.heures.txHoraire||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Seuil alerte (%)</label><input type="number" name="heures.seuilAlerte" value="${d.heures.seuilAlerte||''}" class="form-input"></div>
-        <div class="form-field"><label class="form-label">Heures consommées</label><input type="number" name="heures.consomme" value="${d.heures.consomme||''}" class="form-input"></div>
       </div>
       ${c.hBudg?`<div class="prog-bar" style="height:10px;margin-bottom:6px"><div class="prog-fill" style="width:${Math.min(c.hPct,100)}%;background:${c.hColor}"></div></div>
       <div style="display:flex;gap:24px;font-size:13px">
@@ -858,37 +1001,87 @@ function renderHeures(d,c){
     </div>
     ${catBars?`<div class="card" style="margin-bottom:14px"><div class="card-title">Répartition par catégorie</div>${catBars}</div>`:''}
     <div class="card">
-      <div class="card-title">Saisie des heures</div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Date</th><th>Catégorie</th><th>Ouvrage</th><th>Unité</th><th>Nb comp.</th><th>Heures</th><th>Qté</th><th>Cadence prév.</th><th>Cadence réelle</th><th>Rendement</th><th></th></tr></thead>
-          <tbody>${entryRows}</tbody>
-        </table>
+      <div class="tabs">
+        <button class="tab-btn${tab==='semaine'?' active':''}" data-action="hTab" data-val="semaine">Saisie hebdomadaire</button>
+        <button class="tab-btn${tab==='compagnons'?' active':''}" data-action="hTab" data-val="compagnons">Compagnons (${d.compagnons.length})</button>
       </div>
-      <button class="add-row-btn" data-action="addRow" data-list="heuresEntries">${svgIcon(ico.plus,13)} Ajouter ligne</button>
+
+      ${tab==='compagnons'?`
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Prénom</th><th>Nom</th><th>Catégorie</th><th>Total cumulé</th><th></th></tr></thead>
+            <tbody>${compList||'<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:20px">Aucun compagnon — cliquez "Ajouter"</td></tr>'}</tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" data-action="addRow" data-list="compagnons">${svgIcon(ico.plus,13)} Ajouter compagnon</button>
+      `:`
+        <div class="week-nav">
+          <button data-action="prevWeek">${svgIcon('<polyline points="15 18 9 12 15 6"/>',16)}</button>
+          <span class="week-label">Semaine ${weekNum} — ${fmtMon(mon)} au ${fmtMon(sun)}</span>
+          <button data-action="nextWeek">${svgIcon('<polyline points="9 18 15 12 9 6"/>',16)}</button>
+          <span style="font-size:12px;color:var(--sub)">Total : <strong>${weekTotal>0?weekTotal+'h':'—'}</strong></span>
+        </div>
+        ${d.compagnons.length===0?`<div style="padding:24px;text-align:center;color:var(--sub)">Ajoutez des compagnons dans l'onglet "Compagnons" d'abord.</div>`:`
+        <div class="tbl-wrap">
+          <table class="week-grid">
+            <thead><tr>
+              <th>Prénom Nom</th><th>Catégorie</th>
+              ${days.map(day=>`<th class="${day.we?'day-we':''}">${day.label}<br><span style="font-weight:400;font-size:11px">${day.num} ${day.month}</span></th>`).join('')}
+              <th>Total sem.</th><th>Cumulé</th><th></th>
+            </tr></thead>
+            <tbody>${compRows}</tbody>
+            <tfoot><tr>
+              <td colspan="2" style="font-weight:700">Total journée</td>
+              ${days.map(day=>`<td class="${day.we?'day-we':''}" style="text-align:center;font-weight:700">${dayTotals[day.key]>0?dayTotals[day.key]+'h':'—'}</td>`).join('')}
+              <td style="font-weight:700;text-align:right">${weekTotal>0?weekTotal+'h':'—'}</td>
+              <td colspan="2"></td>
+            </tr></tfoot>
+          </table>
+        </div>`}
+        <button class="add-row-btn" style="margin-top:8px" data-action="hTab" data-val="compagnons">${svgIcon(ico.plus,13)} Gérer les compagnons</button>
+      `}
     </div>
   `;
 }
 
 // Réserves
 function renderReserves(d,c){
-  const rows=d.reserves.map((r,i)=>`<tr>
-    <td>${r.num}</td>
-    <td><select name="reserves.${i}.type">
-      ${['OPR','OPL','Interne'].map(v=>`<option${r.type===v?' selected':''}>${v}</option>`).join('')}
-    </select></td>
-    <td><input type="text" name="reserves.${i}.lot" value="${esc(r.lot)}" style="width:80px"></td>
-    <td><input type="text" name="reserves.${i}.description" value="${esc(r.description)}" style="width:180px"></td>
-    <td><input type="text" name="reserves.${i}.entreprise" value="${esc(r.entreprise)}" style="width:110px"></td>
-    <td><input type="date" name="reserves.${i}.dateConstat" value="${r.dateConstat||''}"></td>
-    <td><input type="date" name="reserves.${i}.dateLeveePrev" value="${r.dateLeveePrev||''}"></td>
-    <td><input type="text" name="reserves.${i}.impact" value="${esc(r.impact)}" style="width:80px"></td>
-    <td><select name="reserves.${i}.statut">
-      ${['Ouverte','En cours','Levée'].map(v=>`<option${r.statut===v?' selected':''}>${v}</option>`).join('')}
-    </select></td>
-    <td><input type="date" name="reserves.${i}.dateLeveeReel" value="${r.dateLeveeReel||''}"></td>
-    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="reserves" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-  </tr>`).join('');
+  const rows=d.reserves.flatMap((r,i)=>{
+    const autoImpact=r.dateConstat&&r.dateLeveePrev?Math.round((new Date(r.dateLeveePrev)-new Date(r.dateConstat))/86400000):null;
+    const impactDisplay=autoImpact!==null?autoImpact:r.impact;
+    return[
+      `<tr>
+        <td>${r.num}</td>
+        <td><select name="reserves.${i}.type">
+          ${['OPR','OPL','Interne'].map(v=>`<option${r.type===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td><input type="text" name="reserves.${i}.lot" value="${esc(r.lot)}" style="width:70px"></td>
+        <td><input type="text" name="reserves.${i}.description" value="${esc(r.description)}" style="width:160px"></td>
+        <td><input type="text" name="reserves.${i}.entreprise" value="${esc(r.entreprise)}" style="width:100px"></td>
+        <td><input type="date" name="reserves.${i}.dateConstat" value="${r.dateConstat||''}"></td>
+        <td><input type="date" name="reserves.${i}.dateLeveePrev" value="${r.dateLeveePrev||''}"></td>
+        <td class="${autoImpact!==null?'auto':''}">
+          ${autoImpact!==null
+            ?`<strong>${impactDisplay}j</strong>`
+            :`<input type="number" name="reserves.${i}.impact" value="${esc(r.impact)}" style="width:55px"> j`}
+        </td>
+        <td><select name="reserves.${i}.statut">
+          ${['Ouverte','En cours','Levée'].map(v=>`<option${r.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td><input type="date" name="reserves.${i}.dateLeveeReel" value="${r.dateLeveeReel||''}"></td>
+        <td style="white-space:nowrap">
+          <button class="detail-expand-btn" data-action="toggleDetail" data-key="res${i}" title="Détail">▼ Détail</button>
+          <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="reserves" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+        </td>
+      </tr>`,
+      `<tr id="detail-row-res${i}" class="detail-row" style="display:${r.detailNote?'table-row':'none'}">
+        <td colspan="11">
+          <label class="form-label" style="display:block;margin-bottom:4px">Description détaillée / Note de travaux</label>
+          <textarea name="reserves.${i}.detailNote" class="form-textarea" rows="3" style="width:100%;max-width:700px">${esc(r.detailNote||'')}</textarea>
+        </td>
+      </tr>`
+    ];
+  }).join('');
   return`
     <h1 class="page-title">Réserves OPR / OPL</h1>
     <div class="kpi-strip" style="grid-template-columns:repeat(3,1fr)">
@@ -900,7 +1093,7 @@ function renderReserves(d,c){
       <div class="card-title">Liste des réserves</div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>N°</th><th>Type</th><th>Lot</th><th>Description</th><th>Entreprise</th><th>Date constat</th><th>Levée prév.</th><th>Impact</th><th>Statut</th><th>Levée réelle</th><th></th></tr></thead>
+          <thead><tr><th>N°</th><th>Type</th><th>Lot</th><th>Description</th><th>Entreprise</th><th>Date constat</th><th>Levée prév.</th><th>Impact (j) <span style="font-weight:400;font-size:10px">auto</span></th><th>Statut</th><th>Levée réelle</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -941,21 +1134,37 @@ function renderChecklist(d,c){
 
 // TS & Aléas
 function renderTS(d,c){
-  const rows=d.ts.map((t,i)=>`<tr>
-    <td><input type="text" name="ts.${i}.num" value="${esc(t.num)}" style="width:70px"></td>
-    <td><input type="date" name="ts.${i}.date" value="${t.date||''}"></td>
-    <td><input type="text" name="ts.${i}.nature" value="${esc(t.nature)}" style="width:160px"></td>
-    <td><input type="text" name="ts.${i}.demandeur" value="${esc(t.demandeur)}" style="width:110px"></td>
-    <td><input type="number" name="ts.${i}.mtEstime" value="${t.mtEstime||''}" style="width:90px"></td>
-    <td><input type="number" name="ts.${i}.mtAccorde" value="${t.mtAccorde||''}" style="width:90px"></td>
-    <td><select name="ts.${i}.statut">
-      ${['En attente','Accepté','Refusé','En avenant'].map(v=>`<option${t.statut===v?' selected':''}>${v}</option>`).join('')}
-    </select></td>
-    <td><input type="text" name="ts.${i}.impactPlanning" value="${esc(t.impactPlanning)}" style="width:80px"></td>
-    <td><input type="text" name="ts.${i}.impactBudget" value="${esc(t.impactBudget)}" style="width:80px"></td>
-    <td><input type="text" name="ts.${i}.numAvenant" value="${esc(t.numAvenant)}" style="width:80px"></td>
-    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="ts" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-  </tr>`).join('');
+  const rows=d.ts.flatMap((t,i)=>{
+    const isRefuse=t.statut==='Refusé';
+    const accordeVal=isRefuse?'0':t.mtAccorde||'';
+    const statutColor=t.statut==='Accepté'?'var(--pos)':t.statut==='Refusé'?'var(--neg)':t.statut==='En avenant'?'var(--acc)':'var(--warn)';
+    return[
+      `<tr>
+        <td><input type="text" name="ts.${i}.num" value="${esc(t.num)}" style="width:65px"></td>
+        <td><input type="date" name="ts.${i}.date" value="${t.date||''}"></td>
+        <td><input type="text" name="ts.${i}.nature" value="${esc(t.nature)}" style="width:140px"></td>
+        <td><input type="text" name="ts.${i}.demandeur" value="${esc(t.demandeur)}" style="width:100px"></td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="ts.${i}.mtEstime" value="${t.mtEstime||''}" style="width:80px"></div></td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="ts.${i}.mtAccorde" value="${accordeVal}" style="width:80px"${isRefuse?' disabled':''}></div></td>
+        <td><select name="ts.${i}.statut" style="color:${statutColor};font-weight:600">
+          ${['En attente','Accepté','Refusé','En avenant'].map(v=>`<option${t.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td style="white-space:nowrap"><input type="number" name="ts.${i}.impactPlanning" value="${esc(t.impactPlanning)}" style="width:55px"> j</td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="text" name="ts.${i}.impactBudget" value="${esc(t.impactBudget)}" style="width:80px"></div></td>
+        <td><input type="text" name="ts.${i}.numAvenant" value="${esc(t.numAvenant)}" style="width:75px"></td>
+        <td style="white-space:nowrap">
+          <button class="detail-expand-btn" data-action="toggleDetail" data-key="ts${i}" title="Détail">▼ Détail</button>
+          <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="ts" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+        </td>
+      </tr>`,
+      `<tr id="detail-row-ts${i}" class="detail-row" style="display:${t.detail?'table-row':'none'}">
+        <td colspan="11">
+          <label class="form-label" style="display:block;margin-bottom:4px">Description détaillée de la nature des travaux</label>
+          <textarea name="ts.${i}.detail" class="form-textarea" rows="3" style="width:100%;max-width:700px">${esc(t.detail||'')}</textarea>
+        </td>
+      </tr>`
+    ];
+  }).join('');
   return`
     <h1 class="page-title">TS & Aléas</h1>
     <div class="kpi-strip">
@@ -965,7 +1174,7 @@ function renderTS(d,c){
       <div class="kpi-card"><div class="kpi-label">Montant accordé</div><div class="kpi-value" style="font-size:17px;color:var(--pos)">${c.tsAccorde>0?eurRaw(c.tsAccorde):'—'}</div></div>
     </div>
     <div class="card">
-      <div class="card-title">Liste TS & Aléas</div>
+      <div class="card-title">Liste TS & Aléas <span class="note" style="font-size:11px;margin-left:6px">— Cliquez "▼ Détail" pour ajouter une description libre</span></div>
       <div class="tbl-wrap">
         <table>
           <thead><tr><th>Réf.</th><th>Date</th><th>Nature</th><th>Demandeur</th><th>Mt estimé</th><th>Mt accordé</th><th>Statut</th><th>Impact planning</th><th>Impact budget</th><th>N° avenant</th><th></th></tr></thead>
@@ -1165,13 +1374,21 @@ function renderDashboard(d,c){
           ['ident.chef','Chef de chantier','text'],['ident.sps','Coordinateur SPS','text'],['ident.bc','Bureau de contrôle','text'],
           ['ident.bet','BET','text'],['ident.inspection','Inspection du travail','text'],['ident.prevention','Chargé prévention','text'],
           ['ident.dateOS','Date OS','date'],['ident.debut','Date début','date'],['ident.fin','Date fin prévue','date'],
-          ['ident.reception','Date réception','date'],['ident.avancementLot','Avancement lot (%)','number'],
+          ['ident.reception','Date réception','date'],
         ].map(([path,label,type])=>`
           <div class="form-field">
             <label class="form-label">${label}</label>
-            <input class="${type==='number'?'form-input':'form-input'}" type="${type}" name="${path}" value="${esc(getVal(d,path))}" class="form-input">
+            <input type="${type}" name="${path}" value="${esc(getVal(d,path))}" class="form-input">
           </div>
         `).join('')}
+        <div class="form-field">
+          <label class="form-label">Avancement lot (%)</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="prog-bar" style="flex:1;height:8px"><div class="prog-fill" style="width:${Math.min(c.planAv,100)}%;background:var(--acc)"></div></div>
+            <strong style="font-size:14px;min-width:40px;text-align:right">${c.planAv.toFixed(0)}%</strong>
+          </div>
+          <div class="note">Calculé automatiquement depuis le planning</div>
+        </div>
       </div>
     </div>
   `;
@@ -1212,7 +1429,7 @@ function renderFinance(d,c){
     <td>${sit.num}</td>
     <td><input type="text" name="situations.${i}.periode" value="${esc(sit.periode)}" style="width:120px"></td>
     <td><input type="date" name="situations.${i}.dateEnvoi" value="${sit.dateEnvoi||''}"></td>
-    <td><input type="number" name="situations.${i}.montantHT" value="${sit.montantHT||''}" style="width:100px"></td>
+    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="situations.${i}.montantHT" value="${sit.montantHT||''}" style="width:90px"></div></td>
     <td class="auto">${sit.cumul>0?eurRaw(sit.cumul):'—'}</td>
     <td><input type="date" name="situations.${i}.datePaiement" value="${sit.datePaiement||''}"></td>
     <td><select name="situations.${i}.statut">
@@ -1227,7 +1444,7 @@ function renderFinance(d,c){
     <td>${av.num}</td>
     <td><input type="text" name="avenants.${i}.designation" value="${esc(av.designation)}" style="width:160px"></td>
     <td><input type="date" name="avenants.${i}.date" value="${av.date||''}"></td>
-    <td><input type="number" name="avenants.${i}.montant" value="${av.montant||''}" style="width:100px"></td>
+    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="avenants.${i}.montant" value="${av.montant||''}" style="width:90px"></div></td>
     <td><input type="text" name="avenants.${i}.impactDelai" value="${esc(av.impactDelai)}" style="width:80px"></td>
     <td><input type="text" name="avenants.${i}.poste" value="${esc(av.poste)}" style="width:80px"></td>
     <td><select name="avenants.${i}.statut">
@@ -1312,7 +1529,7 @@ function renderST(d,c){
       <td><select name="st.${i}.categorie">
         ${['ST Moyen','ST Compétence'].map(v=>`<option${s.categorie===v?' selected':''}>${v}</option>`).join('')}
       </select></td>
-      <td><input type="number" name="st.${i}.montantHT" value="${s.montantHT||''}" style="width:100px"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.montantHT" value="${s.montantHT||''}" style="width:90px"></div></td>
       <td style="color:${dc4Color};font-weight:600">
         <select name="st.${i}.dc4" style="color:${dc4Color}">
           ${['Oui','Non'].map(v=>`<option${s.dc4===v?' selected':''}>${v}</option>`).join('')}
@@ -1323,8 +1540,8 @@ function renderST(d,c){
           ${['Oui','Non'].map(v=>`<option${s.agrement===v?' selected':''}>${v}</option>`).join('')}
         </select>
       </td>
-      <td><input type="number" name="st.${i}.mtSit" value="${s.mtSit||''}" style="width:100px"></td>
-      <td><input type="number" name="st.${i}.rg" value="${s.rg||''}" style="width:80px"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.mtSit" value="${s.mtSit||''}" style="width:85px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.rg" value="${s.rg||''}" style="width:70px"></div></td>
       <td><select name="st.${i}.statut">
         ${['—','En cours','Terminé','Litigieux'].map(v=>`<option${s.statut===v?' selected':''}>${v}</option>`).join('')}
       </select></td>
@@ -1362,7 +1579,7 @@ function renderFournisseurs(d,c){
       ${['Fournitures','Matériel','Services'].map(v=>`<option${f.categorie===v?' selected':''}>${v}</option>`).join('')}
     </select></td>
     <td><input type="text" name="fournisseurs.${i}.numBC" value="${esc(f.numBC)}" style="width:90px"></td>
-    <td><input type="number" name="fournisseurs.${i}.montant" value="${f.montant||''}" style="width:100px"></td>
+    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="fournisseurs.${i}.montant" value="${f.montant||''}" style="width:90px"></div></td>
     <td><input type="date" name="fournisseurs.${i}.livraison" value="${f.livraison||''}"></td>
     <td><select name="fournisseurs.${i}.recu">
       ${['Non','Oui','Partiel'].map(v=>`<option${f.recu===v?' selected':''}>${v}</option>`).join('')}
