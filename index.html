@@ -775,7 +775,13 @@ document.addEventListener('change',e=>{
       }
     }
   }
-  render();
+  // Pour les cellules heuresHebdo, différer le render pour laisser
+  // les clics de navigation semaine s'exécuter d'abord
+  if(name.startsWith('heuresHebdo.')){
+    setTimeout(render,80);
+  } else {
+    render();
+  }
 });
 
 document.addEventListener('click',e=>{
@@ -1396,7 +1402,90 @@ function renderDashboard(d,c){
 
 // Finance / RAF
 function renderFinance(d,c){
-  // RAF table rows
+  // ── Flux financier ──────────────────────────────────────────────────────────
+  const txFact=c.marcheActualise>0?c.totalFacture/c.marcheActualise*100:0;
+  const txEnc=c.totalFacture>0?c.totalEncaisse/c.totalFacture*100:0;
+  const retardsSit=c.situations.filter(s=>s.retard>0).length;
+
+  // ── Budget vs Réel par poste ─────────────────────────────────────────────
+  const posteRows=d.postes.map((p,i)=>{
+    const av=n(p.avancement);
+    const bp=n(p.budgetPrevu);
+    const re=n(p.reelEngage);
+    const rae=n(p.resteAEng)||Math.max(0,bp-re);
+    const eacP=re+rae;
+    const ecart=bp-eacP;
+    return`<tr>
+      <td><input type="text" name="postes.${i}.nom" value="${esc(p.nom)}" style="width:150px" placeholder="Poste ${i+1}"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.budgetPrevu" value="${p.budgetPrevu||''}" style="width:90px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.reelEngage" value="${p.reelEngage||''}" style="width:90px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.resteAEng" value="${p.resteAEng||''}" style="width:90px"></div></td>
+      <td class="auto" style="font-weight:600;color:${ecart<0?'var(--neg)':ecart>0?'var(--pos)':'var(--sub)'}">${bp>0?eurRaw(ecart):'—'}</td>
+      <td style="min-width:130px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(av,100)}%;background:${av>=100?'var(--pos)':re>bp?'var(--neg)':'var(--acc)'}"></div></div>
+          <input type="number" name="postes.${i}.avancement" value="${p.avancement||''}" style="width:42px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
+        </div>
+      </td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="postes" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  const posteTotBP=d.postes.reduce((s,p)=>s+n(p.budgetPrevu),0);
+  const posteTotRE=d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
+  const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-n(p.reelEngage)),0);
+
+  // ── Situations ──────────────────────────────────────────────────────────────
+  const sitRows=c.situations.map((sit,i)=>{
+    const statColor=sit.statut==='Payé'?'var(--pos)':sit.retard>0?'var(--neg)':sit.statut==='Visé'?'var(--acc)':'var(--sub)';
+    const txSit=c.marcheActualise>0?n(sit.montantHT)/c.marcheActualise*100:0;
+    return`<tr style="${sit.retard>0?'background:#fff5f5':''}">
+      <td style="font-weight:600">${sit.num}</td>
+      <td><input type="text" name="situations.${i}.periode" value="${esc(sit.periode)}" style="width:110px"></td>
+      <td><input type="date" name="situations.${i}.dateEnvoi" value="${sit.dateEnvoi||''}"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="situations.${i}.montantHT" value="${sit.montantHT||''}" style="width:90px"></div></td>
+      <td class="auto" style="font-weight:500">${sit.cumul>0?eurRaw(sit.cumul):'—'}</td>
+      <td class="auto">${txSit>0?txSit.toFixed(1)+'%':'—'}</td>
+      <td><input type="date" name="situations.${i}.datePaiement" value="${sit.datePaiement||''}"></td>
+      <td><input type="number" name="situations.${i}.delai" value="${sit.delai||'30'}" style="width:45px"> j</td>
+      <td>
+        <select name="situations.${i}.statut" style="color:${statColor};font-weight:600">
+          ${['—','En attente','Visé','Payé'].map(v=>`<option${sit.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td>${sit.retard>0
+        ?`<span style="color:var(--neg);font-weight:700;font-size:12px">${sit.retard}j retard</span>`
+        :sit.statut==='Payé'
+          ?`<span style="color:var(--pos);font-size:12px">✓</span>`
+          :'<span style="color:var(--sub);font-size:12px">—</span>'}
+      </td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="situations" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  // ── Avenants ────────────────────────────────────────────────────────────────
+  const avCumul=d.avenants.reduce((s,a)=>s+n(a.montant),0);
+  const avRows=d.avenants.map((av,i)=>{
+    const statColor=av.statut==='Signé'?'var(--pos)':av.statut==='Refusé'?'var(--neg)':av.statut==='En cours'?'var(--warn)':'var(--sub)';
+    return`<tr>
+      <td style="font-weight:600">${av.num}</td>
+      <td><input type="text" name="avenants.${i}.designation" value="${esc(av.designation)}" style="width:170px"></td>
+      <td><input type="date" name="avenants.${i}.date" value="${av.date||''}"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="avenants.${i}.montant" value="${av.montant||''}" style="width:90px"></div></td>
+      <td style="white-space:nowrap"><input type="number" name="avenants.${i}.impactDelai" value="${esc(av.impactDelai)}" style="width:50px"> j</td>
+      <td><input type="text" name="avenants.${i}.poste" value="${esc(av.poste)}" style="width:80px"></td>
+      <td>
+        <select name="avenants.${i}.statut" style="color:${statColor};font-weight:600">
+          ${['—','En cours','Signé','Refusé'].map(v=>`<option${av.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" name="avenants.${i}.obs" value="${esc(av.obs)}" style="width:110px"></td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="avenants" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  // ── RAF table ───────────────────────────────────────────────────────────────
+  let rafTotBI=0,rafTotBV=0,rafTotReel=0,rafTotRAD=0,rafTotEAC=0;
   const rafRows=c.rafDefs.map(row=>{
     const rl=d.raf.lines[row.id]||{};
     const bi=n(rl.bi);const bv=n(rl.bv);
@@ -1406,100 +1495,158 @@ function renderFinance(d,c){
     const eac=reel+rad;
     const pctCA=c.marcheActualise>0?eac/c.marcheActualise*100:0;
     const monthVal=c.rafCnt>0?rad/c.rafCnt:0;
+    const ecartRAF=bv>0?bv-eac:0;
+    rafTotBI+=bi;rafTotBV+=bv;rafTotReel+=reel;rafTotRAD+=rad;rafTotEAC+=eac;
     return`<tr>
-      <td class="sticky">${esc(row.label)}</td>
+      <td class="sticky" style="font-weight:500">${esc(row.label)}</td>
       <td style="font-size:11px;color:var(--sub);white-space:nowrap">${esc(row.src)}</td>
-      <td><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:90px"></td>
-      <td><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:90px"></td>
-      <td><input type="number" name="raf.lines.${row.id}.m1" value="${rl.m1||''}" style="width:90px"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:80px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px"></div></td>
       <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
-      <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
-      <td class="auto">${pctCA>0?pctCA.toFixed(1)+'%':'—'}</td>
-      <td><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad||''}" style="width:90px"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad||''}" style="width:80px"></div></td>
       <td class="auto" style="font-weight:600">${eac>0?eurRaw(eac):'—'}</td>
+      <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
+      <td class="auto">${pctCA>0?pctCA.toFixed(1)+'%':'—'}</td>
       ${row.manual
-        ?`<td><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" style="width:80px"></td><td><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:80px"></td>`
+        ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" style="width:75px"></div></td><td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:75px"></div></td>`
         :`<td class="auto">${reel>0?eurRaw(reel):'—'}</td><td class="auto">${eng>0?eurRaw(eng):'—'}</td>`}
-      ${c.rafMonths.map(m=>`<td class="auto" style="white-space:nowrap">${monthVal>0?eurRaw(monthVal):'—'}</td>`).join('')}
+      ${c.rafMonths.map(m=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0?eurRaw(monthVal):'—'}</td>`).join('')}
     </tr>`;
   }).join('');
 
-  // Situations
-  const sitRows=c.situations.map((sit,i)=>`<tr>
-    <td>${sit.num}</td>
-    <td><input type="text" name="situations.${i}.periode" value="${esc(sit.periode)}" style="width:120px"></td>
-    <td><input type="date" name="situations.${i}.dateEnvoi" value="${sit.dateEnvoi||''}"></td>
-    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="situations.${i}.montantHT" value="${sit.montantHT||''}" style="width:90px"></div></td>
-    <td class="auto">${sit.cumul>0?eurRaw(sit.cumul):'—'}</td>
-    <td><input type="date" name="situations.${i}.datePaiement" value="${sit.datePaiement||''}"></td>
-    <td><select name="situations.${i}.statut">
-      ${['—','En attente','Visé','Payé'].map(v=>`<option${sit.statut===v?' selected':''}>${v}</option>`).join('')}
-    </select></td>
-    ${sit.retard>0?`<td style="color:var(--neg);font-size:12px;font-weight:600">${sit.retard}j</td>`:'<td class="auto">—</td>'}
-    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="situations" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-  </tr>`).join('');
+  const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
+  const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
 
-  // Avenants
-  const avRows=d.avenants.map((av,i)=>`<tr>
-    <td>${av.num}</td>
-    <td><input type="text" name="avenants.${i}.designation" value="${esc(av.designation)}" style="width:160px"></td>
-    <td><input type="date" name="avenants.${i}.date" value="${av.date||''}"></td>
-    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="avenants.${i}.montant" value="${av.montant||''}" style="width:90px"></div></td>
-    <td><input type="text" name="avenants.${i}.impactDelai" value="${esc(av.impactDelai)}" style="width:80px"></td>
-    <td><input type="text" name="avenants.${i}.poste" value="${esc(av.poste)}" style="width:80px"></td>
-    <td><select name="avenants.${i}.statut">
-      ${['—','En cours','Signé','Refusé'].map(v=>`<option${av.statut===v?' selected':''}>${v}</option>`).join('')}
-    </select></td>
-    <td><input type="text" name="avenants.${i}.obs" value="${esc(av.obs)}" style="width:120px"></td>
-    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="avenants" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-  </tr>`).join('');
+  // ── Synthèse marché ─────────────────────────────────────────────────────────
+  function flowBox(label,value,color='var(--text)',sub=''){
+    return`<div style="flex:1;min-width:130px;background:#fff;border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${label}</div>
+      <div style="font-size:17px;font-weight:700;color:${color}">${value}</div>
+      ${sub?`<div style="font-size:11px;color:var(--sub);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+  }
+  const arrow=`<div style="color:var(--sub);font-size:18px;align-self:center">→</div>`;
 
   return`
-    <h1 class="page-title">Suivi financier / RAF</h1>
+    <h1 class="page-title">Suivi financier</h1>
+
+    <!-- Saisie paramètres de base -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Paramètres RAF</div>
-      <div class="param-row">
-        <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
-        <div class="form-field"><label class="form-label">Clé</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
-        <div class="form-field"><label class="form-label">Méthode</label><select name="raf.methode" class="form-select">
-          ${['Avancement physique','À terminaison','Réengagement'].map(v=>`<option${d.raf.methode===v?' selected':''}>${v}</option>`).join('')}
-        </select></div>
-        <div class="form-field" style="flex:2"><label class="form-label">Commentaires</label><input type="text" name="raf.commentaires" value="${esc(d.raf.commentaires)}" class="form-input"></div>
+      <div class="card-title">Paramètres financiers</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="form-field"><label class="form-label">Marché initial HT</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.marcheInitial" value="${d.finance.marcheInitial||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Avenants signés</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.avenantsSignes" value="${d.finance.avenantsSignes||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Budget CR (coût revient)</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Réel engagé à date</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Reste à engager</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.resteAEngager" value="${d.finance.resteAEngager||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Frais généraux chantier</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.fgChantier" value="${d.finance.fgChantier||''}" class="form-input"></div></div>
       </div>
     </div>
-    <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-      <div class="kpi-card"><div class="kpi-label">Marché actualisé</div><div class="kpi-value" style="font-size:16px">${c.marcheActualise>0?eurRaw(c.marcheActualise):'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Budget CR</div><div class="kpi-value" style="font-size:16px">${c.budgetCR>0?eurRaw(c.budgetCR):'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Marge brute</div><div class="kpi-value" style="font-size:16px;color:${c.margeBrute<0?'var(--neg)':c.margeBrute>0?'var(--pos)':'var(--sub)'}">${c.budgetCR>0?eurRaw(c.margeBrute):'—'}</div><div class="kpi-sub">${c.budgetCR>0?pct(c.tauxMarge):''}</div></div>
-      <div class="kpi-card"><div class="kpi-label">EAC</div><div class="kpi-value" style="font-size:16px">${c.eac>0?eurRaw(c.eac):'—'}</div></div>
-    </div>
+
+    <!-- Flux financier visuel -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Reste à faire (RAF)</div>
+      <div class="card-title">Vue d'ensemble financière</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:16px">
+        ${flowBox('Marché initial',c.marcheInitial>0?eurRaw(c.marcheInitial):'—')}
+        ${arrow}
+        ${flowBox('+ Avenants signés',c.avenantsSignes>0?'+'+eurRaw(c.avenantsSignes):c.avenantsSignes<0?eurRaw(c.avenantsSignes):'—',c.avenantsSignes>=0?'var(--pos)':'var(--neg)')}
+        ${arrow}
+        ${flowBox('= Marché actualisé',c.marcheActualise>0?eurRaw(c.marcheActualise):'—','var(--acc)')}
+        ${arrow}
+        ${flowBox('Budget CR',c.budgetCR>0?eurRaw(c.budgetCR):'—')}
+        ${arrow}
+        ${flowBox('EAC',c.eac>0?eurRaw(c.eac):'—')}
+        ${arrow}
+        ${flowBox('Marge brute',c.budgetCR>0?eurRaw(c.margeBrute):'—',c.margeBrute<0?'var(--neg)':'var(--pos)',c.budgetCR>0?pct(c.tauxMarge):'')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <!-- Facturation -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Facturation</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>Facturé</span><strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong>
+          </div>
+          <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txFact,100)}%;background:var(--acc)"></div></div>
+          <div class="note">${txFact.toFixed(1)}% du marché actualisé${retardsSit>0?` · <span style="color:var(--neg)">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}</div>
+        </div>
+        <!-- Encaissement -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Encaissement</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>Encaissé</span><strong>${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong>
+          </div>
+          <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txEnc,100)}%;background:var(--pos)"></div></div>
+          <div class="note">${txEnc.toFixed(1)}% des situations facturées</div>
+        </div>
+        <!-- RAF -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Reste à faire total</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>RAD consolidé</span><strong>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub)">
+            <span>EAC RAF</span><span>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Budget vs Réel par poste -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Budget vs Réel par poste analytique</div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr>
-            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2">Poste</th>
-            <th>Source</th><th>Budget init.</th><th>Budget validé</th><th>Budget M-1</th>
-            <th>Réel cumulé</th><th>Réel M</th><th>% CA</th><th>Reste à dép.</th><th>EAC</th>
-            <th>Réel</th><th>Engagement</th>
-            ${c.rafMonths.map(m=>`<th>${m}</th>`).join('')}
-          </tr></thead>
-          <tbody>${rafRows}</tbody>
+          <thead><tr><th>Poste</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
+          <tbody>${posteRows}</tbody>
+          <tfoot><tr style="background:#f0f2f5;font-weight:700">
+            <td>Total</td>
+            <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
+            <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
+            <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
+            <td style="color:${(posteTotBP-posteTotRE-posteTotRAE)<0?'var(--neg)':'var(--pos)'}">
+              ${posteTotBP>0?eurRaw(posteTotBP-posteTotRE-posteTotRAE):'—'}
+            </td>
+            <td colspan="2"></td>
+          </tr></tfoot>
         </table>
       </div>
+      <button class="add-row-btn" data-action="addRow" data-list="postes">${svgIcon(ico.plus,13)} Ajouter poste</button>
     </div>
+
+    <!-- Situations de travaux -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Situations de travaux</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Situations de travaux</div>
+        <div style="display:flex;gap:12px;font-size:12px">
+          <span>Facturé : <strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong></span>
+          <span>Encaissé : <strong style="color:var(--pos)">${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong></span>
+          ${retardsSit>0?`<span style="color:var(--neg);font-weight:600">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}
+        </div>
+      </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>N°</th><th>Période</th><th>Date envoi</th><th>Montant HT</th><th>Cumul HT</th><th>Date paiement</th><th>Statut</th><th>Retard</th><th></th></tr></thead>
+          <thead><tr><th>N°</th><th>Période</th><th>Date envoi</th><th>Montant HT</th><th>Cumul HT</th><th>% marché</th><th>Date paiement</th><th>Délai</th><th>Statut</th><th>État</th><th></th></tr></thead>
           <tbody>${sitRows}</tbody>
         </table>
       </div>
       <button class="add-row-btn" data-action="addRow" data-list="situations">${svgIcon(ico.plus,13)} Ajouter situation</button>
     </div>
-    <div class="card">
-      <div class="card-title">Avenants</div>
+
+    <!-- Avenants -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Avenants</div>
+        <div style="font-size:12px">
+          Cumul avenants : <strong style="color:${avCumul>=0?'var(--pos)':'var(--neg)'}">${avCumul!==0?eurRaw(avCumul):'—'}</strong>
+          &nbsp;·&nbsp; ${d.avenants.filter(a=>a.statut==='Signé').length} signé(s) / ${d.avenants.filter(a=>a.designation).length} total
+        </div>
+      </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr><th>N°</th><th>Désignation</th><th>Date</th><th>Montant HT</th><th>Impact délai</th><th>Poste</th><th>Statut</th><th>Obs.</th><th></th></tr></thead>
@@ -1507,6 +1654,42 @@ function renderFinance(d,c){
         </table>
       </div>
       <button class="add-row-btn" data-action="addRow" data-list="avenants">${svgIcon(ico.plus,13)} Ajouter avenant</button>
+    </div>
+
+    <!-- RAF -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Reste à faire (RAF)</div>
+      <div class="param-row" style="margin-bottom:10px">
+        <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Méthode</label><select name="raf.methode" class="form-select">
+          ${['Avancement physique','À terminaison','Réengagement'].map(v=>`<option${d.raf.methode===v?' selected':''}>${v}</option>`).join('')}
+        </select></div>
+        <div class="form-field" style="flex:2"><label class="form-label">Commentaires</label><input type="text" name="raf.commentaires" value="${esc(d.raf.commentaires)}" class="form-input"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2;min-width:130px">Poste</th>
+            <th>Source</th><th>Budget init.</th><th>Budget validé</th>
+            <th>Réel cumulé</th><th>Reste à dép.</th><th>EAC</th><th>Écart BV-EAC</th><th>% CA</th>
+            <th>Réel M</th><th>Engagement</th>
+            ${c.rafMonths.map(m=>`<th style="white-space:nowrap">${m}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rafRows}</tbody>
+          <tfoot><tr style="background:#f0f2f5;font-weight:700">
+            <td colspan="2">Total RAF</td>
+            <td>${rafTotBI>0?eurRaw(rafTotBI):'—'}</td>
+            <td>${rafTotBV>0?eurRaw(rafTotBV):'—'}</td>
+            <td>${rafTotReel>0?eurRaw(rafTotReel):'—'}</td>
+            <td>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</td>
+            <td>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</td>
+            <td style="color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?eurRaw(rafTotEcart):'—'}</td>
+            <td>${rafTotPctCA>0?rafTotPctCA.toFixed(1)+'%':'—'}</td>
+            <td colspan="${2+c.rafMonths.length}"></td>
+          </tr></tfoot>
+        </table>
+      </div>
     </div>
   `;
 }
