@@ -1,1 +1,2046 @@
 
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Suivi de Chantier SAP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --shell:#354a5f;--nav:#42566a;--acc:#0070f2;--pos:#107e3e;--neg:#d20a0a;--warn:#e76500;--neu:#5b738b;
+  --bg:#f5f6f7;--card:#fff;--border:#e5e8ec;--text:#1d2d3e;--sub:#6a7a8a;
+  --sh:0 1px 4px rgba(0,0,0,.15);--card-sh:0 2px 8px rgba(0,0,0,.08);
+}
+body{font-family:'Public Sans',sans-serif;font-size:14px;color:var(--text);background:var(--bg);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Shell bar ── */
+#shell{
+  height:48px;background:var(--shell);color:#fff;display:flex;align-items:center;
+  gap:8px;padding:0 12px;flex-shrink:0;box-shadow:var(--sh);z-index:100;
+}
+#shell .logo-btn{
+  width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.15);border:none;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;
+  font-weight:700;font-size:13px;letter-spacing:.5px;flex-shrink:0;
+}
+#shell .logo-btn:hover{background:rgba(255,255,255,.25)}
+#shell .pf-btn{
+  display:flex;align-items:center;gap:5px;border:none;background:rgba(255,255,255,.1);
+  color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px;
+  font-family:inherit;flex-shrink:0;
+}
+#shell .pf-btn:hover{background:rgba(255,255,255,.2)}
+#shell .divider{width:1px;height:24px;background:rgba(255,255,255,.2);flex-shrink:0}
+#shell select#chantier-sw{
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
+  padding:4px 8px;border-radius:6px;font-size:13px;font-family:inherit;cursor:pointer;max-width:220px;
+}
+#shell select#chantier-sw option{background:var(--shell);color:#fff}
+#shell .shell-search{
+  flex:1;max-width:300px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);
+  border-radius:6px;padding:5px 10px;color:#fff;font-size:13px;font-family:inherit;
+}
+#shell .shell-search::placeholder{color:rgba(255,255,255,.5)}
+#shell .shell-search:focus{outline:none;background:rgba(255,255,255,.18)}
+#shell .spacer{flex:1}
+#shell .notif-btn{
+  width:34px;height:34px;border-radius:50%;border:none;background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);position:relative;
+}
+#shell .notif-btn:hover{background:rgba(255,255,255,.1)}
+#shell .notif-dot{
+  position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;
+  background:var(--warn);border:2px solid var(--shell);
+}
+#shell .avatar{
+  width:32px;height:32px;border-radius:50%;background:var(--acc);color:#fff;
+  font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+
+/* ── Layout ── */
+.layout{display:flex;flex:1;overflow:hidden}
+
+/* ── Nav rail ── */
+#nav-rail{
+  width:60px;background:var(--nav);display:flex;flex-direction:column;
+  align-items:center;padding:10px 0;gap:3px;flex-shrink:0;overflow-y:auto;
+}
+#nav-rail .nav-item{
+  width:46px;height:46px;border-radius:10px;border:none;background:transparent;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;color:#cdd8e2;font-size:9px;font-family:inherit;transition:background .15s;
+  text-align:center;padding:0 2px;
+}
+#nav-item:hover{background:rgba(255,255,255,.1)}
+#nav-rail .nav-item:hover{background:rgba(255,255,255,.1)}
+#nav-rail .nav-item.active{background:rgba(255,255,255,.16);color:#fff}
+#nav-rail .nav-sep{width:32px;height:1px;background:rgba(255,255,255,.15);margin:3px 0}
+
+/* ── Main ── */
+#main{flex:1;overflow-y:auto;padding:16px}
+
+/* ── Generic components ── */
+.page-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--text)}
+.section-title{font-size:14px;font-weight:600;margin:20px 0 10px;color:var(--text)}
+.card{background:var(--card);border-radius:10px;box-shadow:var(--card-sh);padding:16px}
+.card-title{font-size:13px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+
+/* KPI strip */
+.kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.kpi-card{background:var(--card);border-radius:10px;box-shadow:var(--card-sh);padding:14px 16px}
+.kpi-label{font-size:11px;color:var(--sub);font-weight:500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.kpi-value{font-size:22px;font-weight:700;color:var(--text);line-height:1}
+.kpi-sub{font-size:11px;color:var(--sub);margin-top:3px}
+
+/* Tables */
+.tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f0f2f5;color:var(--sub);font-weight:600;font-size:11px;text-transform:uppercase;
+   letter-spacing:.4px;padding:8px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8f9fa}
+table input,table select{
+  border:1px solid transparent;border-radius:4px;padding:3px 6px;font-size:13px;
+  font-family:inherit;background:transparent;width:100%;min-width:60px;
+}
+table input:hover,table select:hover{border-color:var(--border)}
+table input:focus,table select:focus{outline:none;border-color:var(--acc);background:#fff}
+td.auto{color:var(--sub);font-size:12px}
+td.sticky{position:sticky;left:0;background:var(--card);z-index:1;font-weight:500}
+tr:hover td.sticky{background:#f8f9fa}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:6px;padding:7px 14px;
+     font-size:13px;font-family:inherit;cursor:pointer;font-weight:500;transition:opacity .15s}
+.btn-primary{background:var(--acc);color:#fff}.btn-primary:hover{opacity:.88}
+.btn-ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}.btn-ghost:hover{background:#e8f1fd}
+.btn-danger{background:transparent;color:var(--neg);border:1px solid var(--neg)}.btn-danger:hover{background:#fde8e8}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-icon{width:28px;height:28px;padding:0;border-radius:6px;justify-content:center}
+.add-row-btn{display:flex;align-items:center;gap:5px;margin-top:8px;color:var(--acc);
+             font-size:12px;cursor:pointer;background:none;border:none;font-family:inherit;font-weight:500}
+.add-row-btn:hover{text-decoration:underline}
+
+/* Form grid */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.form-field{display:flex;flex-direction:column;gap:4px}
+.form-label{font-size:11px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:.4px}
+.form-input,.form-select,.form-textarea{
+  border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;
+  font-family:inherit;background:#fff;color:var(--text);width:100%;
+}
+.form-textarea{resize:vertical;min-height:72px}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--acc)}
+
+/* Status badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-green{background:#e8f5e9;color:var(--pos)}
+.badge-red{background:#fde8e8;color:var(--neg)}
+.badge-orange{background:#fff3e0;color:var(--warn)}
+.badge-blue{background:#e8f1fd;color:var(--acc)}
+.badge-grey{background:#f0f2f5;color:var(--sub)}
+
+/* Progress bar */
+.prog-bar{height:6px;background:#e5e8ec;border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;transition:width .3s}
+
+/* Alert items */
+.alert-item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;
+            background:#fff8f0;border-left:3px solid var(--warn);margin-bottom:6px;font-size:13px}
+.alert-item svg{flex-shrink:0}
+
+/* Tile grid */
+.tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.tile{
+  background:var(--card);border-radius:12px;box-shadow:var(--card-sh);padding:18px 16px;
+  cursor:pointer;display:flex;flex-direction:column;gap:8px;transition:box-shadow .15s,transform .1s;
+  border:1px solid transparent;
+}
+.tile:hover{box-shadow:0 4px 16px rgba(0,0,0,.12);transform:translateY(-1px)}
+.tile .tile-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.tile .tile-name{font-size:13px;font-weight:600;color:var(--text)}
+.tile .tile-kpi{font-size:20px;font-weight:700;color:var(--text)}
+.tile .tile-sub{font-size:11px;color:var(--sub)}
+.tile-group-label{font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;
+                   letter-spacing:.6px;margin:16px 0 6px}
+
+/* Portfolio cards */
+.pf-card{
+  background:var(--card);border-radius:12px;box-shadow:var(--card-sh);padding:16px;
+  cursor:pointer;border:1px solid transparent;transition:box-shadow .15s,border-color .15s;
+}
+.pf-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.12);border-color:var(--acc)}
+.pf-card-add{
+  background:transparent;border-radius:12px;border:2px dashed var(--border);padding:16px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;color:var(--sub);min-height:120px;transition:border-color .15s;
+}
+.pf-card-add:hover{border-color:var(--acc);color:var(--acc)}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+
+/* Filter chips */
+.filter-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{
+  padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;
+  font-size:12px;cursor:pointer;font-family:inherit;color:var(--sub);transition:all .15s;
+}
+.chip.active{background:var(--acc);border-color:var(--acc);color:#fff}
+
+/* Dot status */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+
+/* Param row */
+.param-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.param-row .form-field{flex:1;min-width:160px}
+
+/* Checklist */
+.cl-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.cl-item:last-child{border-bottom:none}
+.cl-item input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);flex-shrink:0}
+.cl-item .cl-label{flex:1;font-size:13px}
+.cl-item .cl-label.done{text-decoration:line-through;color:var(--sub)}
+.cl-date{width:130px}
+.cl-resp{width:160px}
+
+/* Category breakdown */
+.cat-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cat-label{width:140px;font-size:12px;color:var(--sub);flex-shrink:0}
+.cat-bg{flex:1;height:8px;background:#e5e8ec;border-radius:4px;overflow:hidden}
+.cat-fill{height:100%;border-radius:4px;background:var(--acc)}
+.cat-val{font-size:12px;font-weight:600;width:50px;text-align:right;flex-shrink:0}
+
+/* Tooltip-style note */
+.note{font-size:11px;color:var(--sub);margin-top:4px}
+
+/* Nav dot tooltip */
+.nav-tip{font-size:9px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46px;text-align:center}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c5cdd6;border-radius:3px}
+
+/* Print */
+@media print{#shell,#nav-rail{display:none!important}}
+
+/* Amount input with € prefix */
+.amt-cell{display:flex;align-items:center;gap:3px}
+.amt-cell .sym{color:var(--sub);font-size:12px;flex-shrink:0;font-weight:500}
+.amt-cell input{min-width:80px}
+
+/* Expandable detail row */
+tr.detail-row td{background:#fafbfc;padding:10px 14px}
+.detail-expand-btn{background:none;border:none;cursor:pointer;color:var(--acc);padding:2px 6px;font-size:11px;border-radius:4px;white-space:nowrap}
+.detail-expand-btn:hover{background:#e8f1fd}
+
+/* Week grid */
+.week-nav{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.week-nav .week-label{font-size:14px;font-weight:600;min-width:220px;text-align:center}
+.week-nav button{width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.week-nav button:hover{background:#f0f2f5}
+table.week-grid input[type=number]{width:50px;text-align:center}
+table.week-grid tfoot td{font-weight:700;background:#f0f2f5;padding:8px 10px}
+table.week-grid td.day-we{background:#f8f9fa}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px}
+.tab-btn{padding:8px 18px;border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s}
+.tab-btn.active{color:var(--acc);border-bottom-color:var(--acc)}
+.tab-btn:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<header id="shell"></header>
+<div class="layout">
+  <nav id="nav-rail"></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+'use strict';
+// ─── Utilities ───────────────────────────────────────────────────────────────
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const n=x=>{const v=parseFloat(x);return isNaN(v)?0:v};
+const eur=x=>{const v=n(x);return v===0?'—':v.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})};
+const eurRaw=x=>n(x).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const pct=x=>{const v=n(x);return v===0?'—':v.toFixed(1)+'%'};
+const num2=x=>{const v=n(x);return v===0?'—':v.toFixed(2)};
+const svgIcon=(path,size=16,extra='')=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${path}</svg>`;
+
+// Week helpers
+function getISOWeek(date){
+  const d=new Date(date);d.setHours(12,0,0,0);
+  d.setDate(d.getDate()+4-(d.getDay()||7));
+  const y=d.getFullYear();
+  const start=new Date(y,0,1,12);
+  return[y,Math.ceil((((d-start)/86400000)+1)/7)];
+}
+function weekKey(date){const[y,w]=getISOWeek(date);return`${y}-W${String(w).padStart(2,'0')}`}
+function weekOf(k){
+  const[y,w]=k.split('-W').map(Number);
+  const jan4=new Date(y,0,4);
+  const mon=new Date(jan4);mon.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(w-1)*7);
+  return mon;
+}
+function weekDays(k){
+  const mon=weekOf(k);
+  const DAYS=['Lu','Ma','Me','Je','Ve','Sa','Di'];
+  const MOIS=['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+  return DAYS.map((l,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return{key:['lu','ma','me','je','ve','sa','di'][i],label:l,num:d.getDate(),month:MOIS[d.getMonth()],we:i>=5};});
+}
+function prevWeek(k){const d=weekOf(k);d.setDate(d.getDate()-7);return weekKey(d)}
+function nextWeek(k){const d=weekOf(k);d.setDate(d.getDate()+7);return weekKey(d)}
+function fmtWeekRange(k){
+  const mon=weekOf(k);const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+  const f=d=>`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(-2)}`;
+  return`${f(mon)} – ${f(sun)}`;
+}
+function isoWeekNum(k){return parseInt(k.split('-W')[1])}
+const ico={
+  home:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  brief:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
+  dash:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+  fin:'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  st:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  fourn:'<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  plan:'<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  heure:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  res:'<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  check:'<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 0 0 2h7"/>',
+  ts:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+  cr:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  bell:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  trash:'<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+  copy:'<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  pdf:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  warn:'<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+};
+
+// ─── Data defaults ────────────────────────────────────────────────────────────
+function defaults(){
+  const row6=(fn)=>Array.from({length:6},(_,i)=>fn(i));
+  return{
+    ident:{nom:'',otp:'',adresse:'',mo:'',moe:'',bc:'',bet:'',sps:'',inspection:'',
+           ca:'',prevention:'',commerce:'',chef:'',comp1:'',comp2:'',
+           dateOS:'',debut:'',fin:'',reception:'',avancementLot:''},
+    contract:{montantHT:'',montantTTC:'',tva:'20',delaiPaiement:'30',
+              revision:'non',formule:'',delaiContractuel:''},
+    finance:{marcheInitial:'',avenantsSignes:'',budgetCR:'',reelEngage:'',resteAEngager:'',fgChantier:''},
+    postes:row6(i=>({nom:'',budgetPrevu:'',reelEngage:'',resteAEng:'',avancement:'',txHoraire:'37.3',hBudg:'',hReel:'',source:'manuel'})),
+    situations:Array.from({length:8},(_,i)=>({
+      num:i+1,periode:'Situation '+(i+1),dateEnvoi:'',montantHT:'',datePaiement:'',delai:'30',statut:'—',visa:''
+    })),
+    avenants:Array.from({length:4},(_,i)=>({
+      num:i+1,designation:'',date:'',montant:'',impactDelai:'',poste:'',statut:'—',obs:''
+    })),
+    st:row6(()=>({entreprise:'',lot:'',categorie:'ST Moyen',montantHT:'',dc4:'Non',agrement:'Non',mtSit:'',rg:'',statut:'—',obs:''})),
+    fournisseurs:row6(()=>({fournisseur:'',designation:'',categorie:'Fournitures',numBC:'',dateBC:'',montant:'',livraison:'',recu:'Non',mtFacture:'',statut:'—'})),
+    planning:row6(()=>({tache:'',responsable:'',duree:'',debut:'',fin:'',avancement:'',statut:'—'})),
+    jalons:['OS démarrage','Installation terminée','Réception provisoire','Levée réserves','Réception définitive','GPA'].map(nom=>({nom,datePrev:'',dateReel:'',statut:'—'})),
+    heures:{budgetTotal:'',txHoraire:'37.3',seuilAlerte:'90',consomme:''},
+    heuresEntries:row6(()=>({date:'',categorie:'Compagnon',ouvrage:'',unite:'',nbComp:'',heures:'',qte:'',cadencePrev:''})),
+    reserves:row6((_,i)=>({num:i+1,type:'OPR',lot:'',description:'',entreprise:'',dateConstat:'',dateLeveePrev:'',impact:'',statut:'Ouverte',dateLeveeReel:'',detailNote:''})),
+    checklistDemarrage:['PPSPS','DC4 sous-traitants','Attestations d\'assurance','Plan d\'installation (PIC)',
+      'Plans d\'exécution validés','DICT','Autorisation voirie/arrêté','OS démarrage',
+      'Constat contradictoire état des lieux','Planning études/approvisionnement','PAQ',
+      'Caution bonne exécution','Réunion transfert/lancement','Ouverture SAP/OTP','Affichage réglementaire'
+    ].map(item=>({item,done:false,date:'',responsable:'',obs:''})),
+    checklistReception:['Autocontrôles techniques','Essais/tests réglementaires','OPR','Levée réserves OPR',
+      'PV réception signé','OPL','DOE','DIUO','DGD','Libération retenue garantie',
+      'Clôture RAF/SAP','REX','GPA'
+    ].map(item=>({item,done:false,date:'',responsable:'',obs:''})),
+    ts:Array.from({length:5},(_,i)=>({
+      num:'TS-0'+(i+1),date:'',nature:'',demandeur:'',mtEstime:'',mtAccorde:'',
+      statut:'En attente',impactPlanning:'',impactBudget:'',numAvenant:'',detail:''
+    })),
+    cr:{date:'',type:'Réunion de chantier',presents:'',redacteur:'',diffusion:'',numCR:'',
+        avancement:'',phase:'',retards:'',causes:'',actions:'',meteo:'',
+        sitEmise:'',encaissement:'',avenantsCours:'',tsValides:'',litiges:'',
+        incidents:'',qualite:'',nc:'',environnement:'',effectif:'',stPresents:'',
+        pointsST:'',agrements:'',livraisons:'',d1:'',d2:'',d3:'',prochaine:''},
+    crHistorique:Array.from({length:6},(_,i)=>({
+      num:'CR-0'+(i+1),date:'',type:'',redacteur:'',presents:'',avancement:'',pointsLeves:'',pointsOuverts:''
+    })),
+    compagnons:[],
+    heuresHebdo:{},
+    raf:{
+      moisRef:'2026-03',cle:'ZAVANC',methode:'Avancement physique',commentaires:'',
+      lines:{
+        stMoyen:{bi:'',bv:'',m1:'',rad:''},
+        stComp:{bi:'',bv:'',m1:'',rad:''},
+        mo:{bi:'',bv:'',m1:'',rad:''},
+        fournitures:{bi:'',bv:'',m1:'',rad:''},
+        materiel:{bi:'',bv:'',m1:'',rad:''},
+        etudes:{bi:'',bv:'',m1:'',rad:'',reel:'',eng:''},
+        autres:{bi:'',bv:'',m1:'',rad:'',reel:'',eng:''}
+      }
+    }
+  };
+}
+
+// ─── State & persistence ──────────────────────────────────────────────────────
+const KEY='suivi_chantier_sap_portfolio_v1';
+const KEY_OLD='suivi_chantier_sap_v1';
+let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine'};
+function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
+function setHTab(val){state.hTab=val;render();}
+
+function load(){
+  try{
+    // migrate old single-chantier data
+    const old=localStorage.getItem(KEY_OLD);
+    if(old&&!localStorage.getItem(KEY)){
+      const d=JSON.parse(old);
+      state.chantiers=[{id:'ch1',d:Object.assign(defaults(),d)}];
+      state.activeId='ch1';
+      save();
+      localStorage.removeItem(KEY_OLD);
+      return;
+    }
+    const raw=localStorage.getItem(KEY);
+    if(raw){
+      const parsed=JSON.parse(raw);
+      state.chantiers=parsed.chantiers||[];
+      state.activeId=parsed.activeId||null;
+      // deep-merge with defaults for any missing keys
+      state.chantiers.forEach(ch=>{
+        const def=defaults();
+        ch.d=deepMerge(def,ch.d||{});
+      });
+    }
+  }catch(e){console.warn('load error',e)}
+}
+
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify({chantiers:state.chantiers,activeId:state.activeId}))}
+  catch(e){console.warn('save error',e)}
+}
+
+function deepMerge(base,over){
+  if(Array.isArray(base)&&Array.isArray(over)){
+    // merge by index, keeping over length if longer
+    const len=Math.max(base.length,over.length);
+    return Array.from({length:len},(_,i)=>{
+      if(i>=over.length)return base[i];
+      if(i>=base.length)return over[i];
+      if(typeof base[i]==='object'&&base[i]!==null&&typeof over[i]==='object'&&over[i]!==null)
+        return deepMerge(base[i],over[i]);
+      return over[i]??base[i];
+    });
+  }
+  if(typeof base==='object'&&base!==null&&typeof over==='object'&&over!==null){
+    const r={...base};
+    for(const k of Object.keys(over)){
+      if(k in base&&typeof base[k]==='object'&&base[k]!==null&&typeof over[k]==='object'&&over[k]!==null)
+        r[k]=deepMerge(base[k],over[k]);
+      else r[k]=over[k]??base[k];
+    }
+    return r;
+  }
+  return over??base;
+}
+
+function getActive(){return state.chantiers.find(c=>c.id===state.activeId)||null}
+
+function newChantier(){
+  const id='ch'+Date.now();
+  const ch={id,d:defaults()};
+  state.chantiers.push(ch);
+  state.activeId=id;
+  save();
+  return ch;
+}
+
+function dupChantier(id){
+  const src=state.chantiers.find(c=>c.id===id);
+  if(!src)return;
+  const newId='ch'+Date.now();
+  state.chantiers.push({id:newId,d:JSON.parse(JSON.stringify(src.d))});
+  save();
+  render();
+}
+
+function delChantier(id){
+  state.chantiers=state.chantiers.filter(c=>c.id!==id);
+  if(state.activeId===id)state.activeId=state.chantiers[0]?.id||null;
+  save();
+  render();
+}
+
+// ─── Deep set ────────────────────────────────────────────────────────────────
+function setD(path,value){
+  const ch=getActive();
+  if(!ch)return;
+  // Special case for heuresHebdo: path = "heuresHebdo.YYYY-WNN.compId.day"
+  if(path.startsWith('heuresHebdo.')){
+    const rest=path.slice('heuresHebdo.'.length);
+    // week key contains '-' not '.', compId may contain letters/digits
+    // format: YYYY-WNN.compId.day
+    const m=rest.match(/^(\d{4}-W\d{2})\.([^.]+)\.([^.]+)$/);
+    if(m){
+      const[,wk,cId,day]=m;
+      if(!ch.d.heuresHebdo)ch.d.heuresHebdo={};
+      if(!ch.d.heuresHebdo[wk])ch.d.heuresHebdo[wk]={};
+      if(!ch.d.heuresHebdo[wk][cId])ch.d.heuresHebdo[wk][cId]={};
+      ch.d.heuresHebdo[wk][cId][day]=value===''?0:n(value);
+      save();return;
+    }
+  }
+  const parts=path.split('.');
+  let obj=ch.d;
+  for(let i=0;i<parts.length-1;i++){
+    const k=parts[i];
+    const nk=parts[i+1];
+    if(obj[k]===undefined||obj[k]===null)obj[k]=/^\d+$/.test(nk)?[]:{};
+    obj=obj[k];
+  }
+  const last=parts[parts.length-1];
+  obj[last]=value;
+  save();
+}
+
+function addRow(listPath){
+  const ch=getActive();if(!ch)return;
+  const parts=listPath.split('.');
+  let obj=ch.d;
+  for(const k of parts)obj=obj[k];
+  const def=defaults();
+  let defArr=def;
+  for(const k of parts)defArr=defArr[k];
+  if(listPath==='compagnons'){
+    obj.push({id:'c'+Date.now(),nom:'',prenom:'',categorie:'Compagnon'});
+  }else{
+    obj.push(JSON.parse(JSON.stringify(defArr[0]||{})));
+    if('num' in obj[obj.length-1])obj[obj.length-1].num=obj.length;
+  }
+  save();
+  render();
+}
+
+function delRow(listPath,idx){
+  const ch=getActive();if(!ch)return;
+  const parts=listPath.split('.');
+  let obj=ch.d;
+  for(const k of parts)obj=obj[k];
+  obj.splice(idx,1);
+  // renumber
+  obj.forEach((r,i)=>{if('num' in r)r.num=i+1});
+  save();
+  render();
+}
+
+// ─── Business logic ───────────────────────────────────────────────────────────
+function statusBadge(s){
+  if(s==='Préparation')return'badge-blue';
+  if(s==='En cours')return'badge-green';
+  if(s==='Livraison')return'badge-orange';
+  if(s==='Réceptionné')return'badge-grey';
+  return'badge-grey';
+}
+
+function summarize(d){
+  const av=n(d.ident.avancementLot);
+  const hasReception=d.ident.reception&&d.ident.reception.length>0;
+  let statut='Préparation',statutColor='#0070f2';
+  let statutBg='#e8f1fd';
+  if(hasReception){statut='Réceptionné';statutColor='#5b738b';statutBg='#f0f2f5';}
+  else if(av>=90){statut='Livraison';statutColor='#e76500';statutBg='#fff3e0';}
+  else if(av>0||d.ident.dateOS){statut='En cours';statutColor='#107e3e';statutBg='#e8f5e9';}
+
+  const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
+  const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
+  const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
+  const marcheActualise=marcheInitial+avenantsSignes;
+  const reelEngage=n(d.finance.reelEngage)||d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
+  const budgetCR=n(d.finance.budgetCR)||marcheInitial;
+  const marge=budgetCR-reelEngage;
+  const taux=budgetCR>0?marge/budgetCR*100:0;
+
+  // alerts
+  let alertCount=0;
+  if(marge<0)alertCount++;
+  const hBudg=n(d.heures.budgetTotal);
+  const hConso=n(d.heures.consomme);
+  const seuilH=n(d.heures.seuilAlerte)||90;
+  if(hBudg>0&&hConso/hBudg*100>seuilH)alertCount++;
+  else if(!hBudg&&hConso>0)alertCount++;
+  // payment retards
+  const today=new Date();
+  d.situations.forEach(s=>{
+    if(s.dateEnvoi&&!s.datePaiement&&s.statut!=='Payé'){
+      const sent=new Date(s.dateEnvoi);
+      const delai=n(s.delai)||30;
+      const due=new Date(sent.getTime()+delai*86400000);
+      if(today>due)alertCount++;
+    }
+  });
+  const dc4Manquants=d.st.filter(s=>s.entreprise&&s.dc4==='Non').length;
+  if(dc4Manquants>0)alertCount++;
+  const tsEnAttente=d.ts.filter(t=>t.nature&&t.statut==='En attente').length;
+  if(tsEnAttente>0)alertCount++;
+  const resOuvertes=d.reserves.filter(r=>r.description&&r.statut==='Ouverte').length;
+  if(resOuvertes>0)alertCount++;
+
+  // planning retards
+  let retards=0;
+  d.planning.forEach(t=>{
+    if(t.fin&&t.statut!=='Terminé'){
+      if(new Date(t.fin)<today)retards++;
+    }
+  });
+
+  // Auto avancement from planning
+  const planTaches=d.planning.filter(t=>t.tache);
+  const avAuto=planTaches.length>0?planTaches.reduce((s,t)=>s+n(t.avancement),0)/planTaches.length:av;
+
+  return{nom:d.ident.nom||'Sans nom',otp:d.ident.otp,mo:d.ident.mo,chef:d.ident.chef,
+    statut,statutColor,statutBg,marcheActualise,marge,taux,avancement:avAuto,alertCount,retards};
+}
+
+function computeAll(d){
+  // Finance
+  const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
+  const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
+  const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
+  const marcheActualise=marcheInitial+avenantsSignes;
+  const budgetCR=n(d.finance.budgetCR)||marcheInitial;
+  const reelEngage=n(d.finance.reelEngage)||d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
+  const resteAEngager=n(d.finance.resteAEngager);
+  const eac=reelEngage+(resteAEngager>0?resteAEngager:0);
+  const margeBrute=budgetCR-reelEngage;
+  const tauxMarge=budgetCR>0?margeBrute/budgetCR*100:0;
+
+  // Situations
+  const totalFacture=d.situations.reduce((s,sit)=>s+n(sit.montantHT),0);
+  let totalEncaisse=0;
+  const today=new Date();
+  const situations=d.situations.map((sit,i)=>{
+    const prev=d.situations.slice(0,i).reduce((s,x)=>s+n(x.montantHT),0);
+    const cumul=prev+n(sit.montantHT);
+    let retard=0;
+    if(sit.dateEnvoi&&!sit.datePaiement&&sit.statut!=='Payé'){
+      const sent=new Date(sit.dateEnvoi);
+      const delai=n(sit.delai)||30;
+      const due=new Date(sent.getTime()+delai*86400000);
+      if(today>due)retard=Math.floor((today-due)/86400000);
+    }
+    if(sit.datePaiement)totalEncaisse+=n(sit.montantHT);
+    return{...sit,cumul,retard};
+  });
+
+  // Heures — total from weekly grid (heuresHebdo) + manual override
+  const txH=n(d.heures.txHoraire)||37.3;
+  const hBudg=n(d.heures.budgetTotal);
+  // Sum all hours from weekly grid
+  let hConsoHebdo=0;
+  const catMap={};
+  Object.values(d.heuresHebdo||{}).forEach(weekData=>{
+    Object.entries(weekData).forEach(([cId,days])=>{
+      const comp=d.compagnons.find(c=>c.id===cId);
+      const cat=comp?comp.categorie:'Compagnon';
+      const h=Object.values(days).reduce((s,v)=>s+n(v),0);
+      hConsoHebdo+=h;
+      catMap[cat]=(catMap[cat]||0)+h;
+    });
+  });
+  // If no weekly data, fall back to legacy heuresEntries
+  d.heuresEntries.forEach(e=>{
+    if(!e.heures)return;
+    if(hConsoHebdo===0){catMap[e.categorie]=(catMap[e.categorie]||0)+n(e.heures);}
+  });
+  const hConso=hConsoHebdo>0?hConsoHebdo:n(d.heures.consomme);
+  const hPct=hBudg>0?Math.min(hConso/hBudg*100,100):0;
+  const hSolde=hBudg-hConso;
+  const hSeuil=n(d.heures.seuilAlerte)||90;
+  const hColor=hPct>=100?'#d20a0a':hPct>=hSeuil?'#e76500':'#107e3e';
+
+  // ST
+  const stReel=cat=>d.st.filter(s=>s.categorie===cat).reduce((s,x)=>s+n(x.mtSit),0);
+  const stEng=cat=>d.st.filter(s=>s.categorie===cat).reduce((s,x)=>s+n(x.montantHT),0);
+  const stTotal=d.st.reduce((s,x)=>s+n(x.montantHT),0);
+  const stSitTotal=d.st.reduce((s,x)=>s+n(x.mtSit),0);
+  const stActifs=d.st.filter(s=>s.entreprise).length;
+  const stDC4=d.st.filter(s=>s.entreprise&&s.dc4==='Non').length;
+
+  // Fournisseurs
+  const fReel=cat=>d.fournisseurs.filter(f=>f.categorie===cat).reduce((s,x)=>s+n(x.mtFacture),0);
+  const fEng=cat=>d.fournisseurs.filter(f=>f.categorie===cat).reduce((s,x)=>s+n(x.montant),0);
+  const fReelM=cat=>d.fournisseurs.filter(f=>f.categorie===cat).reduce((s,x)=>s+n(x.mtFacture),0);
+  const fTotal=d.fournisseurs.reduce((s,x)=>s+n(x.montant),0);
+  const fournActifs=d.fournisseurs.filter(f=>f.fournisseur).length;
+
+  // RAF
+  const moConsoH=hConso;
+  const moRate=txH;
+  const rafDefs=[
+    {id:'stMoyen',label:'ST Moyen',src:'Sous-traitants',reel:stReel('ST Moyen'),eng:stEng('ST Moyen'),reelM:0},
+    {id:'stComp',label:'ST Compétence',src:'Sous-traitants',reel:stReel('ST Compétence'),eng:stEng('ST Compétence'),reelM:0},
+    {id:'mo',label:"Main d'œuvre",src:`Heures · ${hConso||'N'} h × ${txH} €`,reel:moConsoH*moRate,eng:0,reelM:0},
+    {id:'fournitures',label:'Fournitures',src:'Fournisseurs',reel:fReel('Fournitures'),eng:fEng('Fournitures'),reelM:fReelM('Fournitures')},
+    {id:'materiel',label:'Matériel',src:'Fournisseurs',reel:fReel('Matériel'),eng:fEng('Matériel'),reelM:fReelM('Matériel')},
+    {id:'etudes',label:'Études techniques',src:'Saisie manuelle',manual:true},
+    {id:'autres',label:'Autres dépenses',src:'Saisie manuelle',manual:true}
+  ];
+
+  const MOIS_FR=['Janv','Févr','Mars','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
+  let rafCnt=4;
+  if(d.ident.fin&&d.raf.moisRef){
+    try{
+      const ref=new Date(d.raf.moisRef+'-01');
+      const fin=new Date(d.ident.fin);
+      const diff=Math.round((fin-ref)/(30*86400000));
+      rafCnt=Math.max(1,Math.min(6,diff));
+    }catch(e){}
+  }
+  const rafMoisRef=d.raf.moisRef||'2026-01';
+  const rafMonths=Array.from({length:rafCnt},(_,i)=>{
+    try{
+      const [yr,mo]=rafMoisRef.split('-').map(Number);
+      const d2=new Date(yr,mo-1+i+1,1);
+      return MOIS_FR[d2.getMonth()]+' '+d2.getFullYear();
+    }catch{return'M+'+(i+1)}
+  });
+
+  // Reserves
+  const resTotal=d.reserves.filter(r=>r.description).length;
+  const resOuvertes=d.reserves.filter(r=>r.description&&r.statut==='Ouverte').length;
+  const resLevees=d.reserves.filter(r=>r.description&&r.statut==='Levée').length;
+
+  // Checklist
+  const clD=d.checklistDemarrage;
+  const clR=d.checklistReception;
+  const clDDone=clD.filter(x=>x.done).length;
+  const clRDone=clR.filter(x=>x.done).length;
+
+  // TS
+  const tsEnAttente=d.ts.filter(t=>t.nature&&t.statut==='En attente').length;
+  const tsEstime=d.ts.reduce((s,t)=>s+n(t.mtEstime),0);
+  const tsAccorde=d.ts.reduce((s,t)=>s+n(t.mtAccorde),0);
+
+  // CR
+  const crCount=d.crHistorique.filter(c=>c.type).length;
+
+  // Planning — avancement auto from tasks with tache filled
+  const planTachesAll=d.planning.filter(t=>t.tache);
+  const planAv=planTachesAll.length?planTachesAll.reduce((s,t)=>s+n(t.avancement),0)/planTachesAll.length:n(d.ident.avancementLot);
+
+  // Alerts
+  const alerts=[];
+  if(margeBrute<0&&budgetCR>0)alerts.push({msg:`Marge négative : ${eurRaw(margeBrute)}`,icon:ico.warn});
+  if(hBudg>0&&hPct>=hSeuil)alerts.push({msg:`Heures MO à ${hPct.toFixed(0)}% du budget (seuil ${hSeuil}%)`,icon:ico.warn});
+  const retardPmt=situations.filter(s=>s.retard>0).length;
+  if(retardPmt>0)alerts.push({msg:`${retardPmt} situation(s) en retard de paiement`,icon:ico.warn});
+  if(stDC4>0)alerts.push({msg:`DC4 manquant pour ${stDC4} sous-traitant(s)`,icon:ico.warn});
+  if(tsEnAttente>0)alerts.push({msg:`${tsEnAttente} TS/Aléa(s) en attente de décision`,icon:ico.warn});
+  if(resOuvertes>0)alerts.push({msg:`${resOuvertes} réserve(s) OPR/OPL ouverte(s)`,icon:ico.warn});
+
+  return{
+    marcheInitial,avenantsSignes,marcheActualise,budgetCR,reelEngage,resteAEngager,eac,
+    margeBrute,tauxMarge,totalFacture,totalEncaisse,situations,
+    hBudg,hConso,txH,hPct,hSolde,hSeuil,hColor,catMap,
+    stTotal,stSitTotal,stActifs,stDC4,
+    fTotal,fournActifs,
+    rafDefs,rafMonths,rafCnt,
+    resTotal,resOuvertes,resLevees,
+    clDDone,clRDone,
+    tsEnAttente,tsEstime,tsAccorde,
+    crCount,planAv,alerts
+  };
+}
+
+// ─── Event delegation ────────────────────────────────────────────────────────
+document.addEventListener('change',e=>{
+  const t=e.target;
+  const name=t.name;
+  if(!name||!getActive())return;
+  const val=t.type==='checkbox'?t.checked:t.value;
+  setD(name,val);
+  // TS: si statut = Refusé → montant accordé = 0
+  if(name.match(/^ts\.\d+\.statut$/)&&val==='Refusé'){
+    const idx=parseInt(name.split('.')[1]);
+    setD(`ts.${idx}.mtAccorde`,'0');
+  }
+  // Réserves: auto-calc impact depuis dates
+  if(name.match(/^reserves\.\d+\.(dateConstat|dateLeveePrev)$/)){
+    const idx=parseInt(name.split('.')[1]);
+    const ch=getActive();
+    if(ch){
+      const r=ch.d.reserves[idx];
+      if(r.dateConstat&&r.dateLeveePrev){
+        const diff=Math.round((new Date(r.dateLeveePrev)-new Date(r.dateConstat))/86400000);
+        if(diff>=0)setD(`reserves.${idx}.impact`,String(diff));
+      }
+    }
+  }
+  // Pour les cellules heuresHebdo, différer le render pour laisser
+  // les clics de navigation semaine s'exécuter d'abord
+  if(name.startsWith('heuresHebdo.')){
+    setTimeout(render,80);
+  } else {
+    render();
+  }
+});
+
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-action]');
+  if(btn){
+    const action=btn.dataset.action;
+    const id=btn.dataset.id;
+    const list=btn.dataset.list;
+    const idx=btn.dataset.idx!==undefined?parseInt(btn.dataset.idx):null;
+    const val=btn.dataset.val;
+
+    if(action==='goHome'){
+      state.screen='home';
+      if(!state.activeId&&state.chantiers.length>0)state.activeId=state.chantiers[0].id;
+      render();return;
+    }
+    if(action==='goPortfolio'){state.screen='portfolio';render();return;}
+    if(action==='openChantier'){state.activeId=id;state.screen='home';save();render();return;}
+    if(action==='addChantier'){newChantier();state.screen='home';render();return;}
+    if(action==='dupChantier'){dupChantier(id);return;}
+    if(action==='delChantier'){
+      if(confirm('Supprimer ce chantier ?'))delChantier(id);
+      return;
+    }
+    if(action==='pfFilter'){state.pfStatut=val;render();return;}
+    if(action==='addRow'){addRow(list);return;}
+    if(action==='delRow'){delRow(list,idx);return;}
+    if(action==='exportCR'){exportCRPdf();return;}
+    if(action==='prevWeek'){state.hWeek=prevWeek(state.hWeek);render();return;}
+    if(action==='nextWeek'){state.hWeek=nextWeek(state.hWeek);render();return;}
+    if(action==='hTab'){state.hTab=val;render();return;}
+    if(action==='toggleDetail'){
+      const row=document.getElementById('detail-row-'+btn.dataset.key);
+      if(row)row.style.display=row.style.display==='none'?'table-row':'none';
+      return;
+    }
+    return;
+  }
+
+  // nav items
+  const navItem=e.target.closest('.nav-item[data-screen]');
+  if(navItem){
+    state.screen=navItem.dataset.screen;
+    if(state.screen==='portfolio'||state.screen==='home'){
+      if(!state.activeId&&state.chantiers.length>0)state.activeId=state.chantiers[0].id;
+    }
+    render();return;
+  }
+
+  // chantier switcher
+  const sw=e.target.closest('#chantier-sw');
+  if(sw){/* handled by change event */}
+});
+
+document.addEventListener('change',e=>{
+  if(e.target.id==='chantier-sw'){
+    state.activeId=e.target.value;
+    save();
+    render();
+  }
+},{capture:true});
+
+// ─── More screen renderers ────────────────────────────────────────────────────
+
+// Planning
+function renderPlanning(d,c){
+  const today=new Date();
+  const taskRows=d.planning.map((t,i)=>{
+    const av=n(t.avancement);
+    const overdue=t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<today;
+    return`<tr>
+      <td><input type="text" name="planning.${i}.tache" value="${esc(t.tache)}" style="width:160px"></td>
+      <td><input type="text" name="planning.${i}.responsable" value="${esc(t.responsable)}" style="width:100px"></td>
+      <td style="white-space:nowrap"><input type="number" name="planning.${i}.duree" value="${t.duree||''}" style="width:55px"> j</td>
+      <td><input type="date" name="planning.${i}.debut" value="${t.debut||''}"></td>
+      <td><input type="date" name="planning.${i}.fin" value="${t.fin||''}" style="${overdue?'color:var(--neg)':''}"></td>
+      <td style="min-width:120px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${av}%;background:${av>=100?'var(--pos)':'var(--acc)'}"></div></div>
+          <input type="number" name="planning.${i}.avancement" value="${t.avancement||''}" style="width:46px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100">%
+        </div>
+      </td>
+      <td><select name="planning.${i}.statut">
+        ${['—','En cours','Terminé','En retard','Non démarré'].map(v=>`<option${t.statut===v?' selected':''}>${v}</option>`).join('')}
+      </select></td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="planning" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  const jalonRows=d.jalons.map((j,i)=>{
+    const overdue=j.datePrev&&!j.dateReel&&new Date(j.datePrev)<today;
+    return`<tr>
+      <td><span class="dot" style="background:${j.dateReel?'var(--pos)':overdue?'var(--neg)':'var(--border)'}"></span></td>
+      <td style="font-weight:500">${esc(j.nom)}</td>
+      <td><input type="date" name="jalons.${i}.datePrev" value="${j.datePrev||''}" style="${overdue?'color:var(--neg)':''}"></td>
+      <td><input type="date" name="jalons.${i}.dateReel" value="${j.dateReel||''}"></td>
+      <td><select name="jalons.${i}.statut">
+        ${['—','Prévu','Atteint','En retard'].map(v=>`<option${j.statut===v?' selected':''}>${v}</option>`).join('')}
+      </select></td>
+    </tr>`;
+  }).join('');
+
+  return`
+    <h1 class="page-title">Planning</h1>
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Avancement moyen</div><div class="kpi-value">${c.planAv>0?pct(c.planAv):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Tâches en retard</div><div class="kpi-value" style="color:${c.alerts.find(a=>a.msg.includes('retard'))? 'var(--neg)':'var(--sub)'}">${d.planning.filter(t=>t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<today).length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Jalons atteints</div><div class="kpi-value">${d.jalons.filter(j=>j.dateReel).length} / ${d.jalons.length}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Tâches</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tâche</th><th>Responsable</th><th>Durée</th><th>Début</th><th>Fin</th><th>Avancement</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${taskRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="planning">${svgIcon(ico.plus,13)} Ajouter tâche</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Jalons clés</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th></th><th>Jalon</th><th>Date prévisionnelle</th><th>Date réelle</th><th>Statut</th></tr></thead>
+          <tbody>${jalonRows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// Heures MO
+function renderHeures(d,c){
+  const tab=state.hTab||'semaine';
+  const wk=state.hWeek||weekKey(new Date());
+  const days=weekDays(wk);
+  const weekNum=isoWeekNum(wk);
+  const mon=weekOf(wk);
+  const fmtMon=d2=>`${String(d2.getDate()).padStart(2,'0')}/${String(d2.getMonth()+1).padStart(2,'0')}/${d2.getFullYear()}`;
+  const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+
+  // Weekly grid
+  const hebd=d.heuresHebdo||{};
+  const weekData=hebd[wk]||{};
+
+  // Total per day
+  const dayTotals={lu:0,ma:0,me:0,je:0,ve:0,sa:0,di:0};
+  let weekTotal=0;
+  d.compagnons.forEach(comp=>{
+    const cData=weekData[comp.id]||{};
+    days.forEach(day=>{
+      const h=n(cData[day.key]);
+      dayTotals[day.key]+=h;
+      weekTotal+=h;
+    });
+  });
+
+  // Cumul all weeks per compagnon
+  const cumByComp={};
+  Object.values(hebd).forEach(wd=>{
+    Object.entries(wd).forEach(([cId,cdays])=>{
+      cumByComp[cId]=(cumByComp[cId]||0)+Object.values(cdays).reduce((s,v)=>s+n(v),0);
+    });
+  });
+
+  const compRows=d.compagnons.map((comp,ci)=>{
+    const cData=weekData[comp.id]||{};
+    const rowTotal=days.reduce((s,day)=>s+n(cData[day.key]),0);
+    const cumul=cumByComp[comp.id]||0;
+    return`<tr>
+      <td style="white-space:nowrap;font-weight:500">${esc(comp.prenom)} ${esc(comp.nom)}</td>
+      <td><select name="compagnons.${ci}.categorie" style="width:110px">
+        ${['Compagnon','Chef d\'équipe','Intérimaire','Autre'].map(v=>`<option${comp.categorie===v?' selected':''}>${v}</option>`).join('')}
+      </select></td>
+      ${days.map(day=>`<td class="${day.we?'day-we':''}">
+        <input type="number" name="heuresHebdo.${wk}.${comp.id}.${day.key}" value="${cData[day.key]||''}" min="0" max="24" style="width:46px;text-align:center">
+      </td>`).join('')}
+      <td style="font-weight:700;text-align:right">${rowTotal>0?rowTotal+'h':'—'}</td>
+      <td style="color:var(--sub);text-align:right">${cumul>0?cumul+'h':''}</td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="compagnons" data-idx="${ci}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  // Compagnons list (tab 2)
+  const compList=d.compagnons.map((comp,ci)=>`<tr>
+    <td><input type="text" name="compagnons.${ci}.prenom" value="${esc(comp.prenom)}" placeholder="Prénom" style="width:110px"></td>
+    <td><input type="text" name="compagnons.${ci}.nom" value="${esc(comp.nom)}" placeholder="Nom" style="width:120px"></td>
+    <td><select name="compagnons.${ci}.categorie">
+      ${['Compagnon','Chef d\'équipe','Intérimaire','Autre'].map(v=>`<option${comp.categorie===v?' selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td style="color:var(--sub)">${(cumByComp[comp.id]||0)>0?(cumByComp[comp.id])+'h total':''}</td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="compagnons" data-idx="${ci}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+
+  const catBars=Object.entries(c.catMap).map(([cat,h])=>`
+    <div class="cat-bar">
+      <span class="cat-label">${esc(cat)}</span>
+      <div class="cat-bg"><div class="cat-fill" style="width:${c.hConso>0?Math.min(h/c.hConso*100,100):0}%"></div></div>
+      <span class="cat-val">${h.toFixed(0)}h</span>
+    </div>
+  `).join('');
+
+  return`
+    <h1 class="page-title">Heures Main d'œuvre</h1>
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Budget heures</div><div class="kpi-value">${c.hBudg||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Consommé (toutes semaines)</div><div class="kpi-value" style="color:${c.hColor}">${c.hConso>0?c.hConso:c.hConso||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Solde</div><div class="kpi-value" style="color:${c.hSolde<0?'var(--neg)':'var(--pos)'}">${c.hBudg?c.hSolde:'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-label">Compagnons actifs</div><div class="kpi-value">${d.compagnons.length}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Paramètres</div>
+      <div class="param-row">
+        <div class="form-field"><label class="form-label">Budget total (h)</label><input type="number" name="heures.budgetTotal" value="${d.heures.budgetTotal||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Taux horaire (€/h)</label><input type="number" name="heures.txHoraire" value="${d.heures.txHoraire||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Seuil alerte (%)</label><input type="number" name="heures.seuilAlerte" value="${d.heures.seuilAlerte||''}" class="form-input"></div>
+      </div>
+      ${c.hBudg?`<div class="prog-bar" style="height:10px;margin-bottom:6px"><div class="prog-fill" style="width:${Math.min(c.hPct,100)}%;background:${c.hColor}"></div></div>
+      <div style="display:flex;gap:24px;font-size:13px">
+        <span>Coût MO budget : <strong>${eurRaw(c.hBudg*c.txH)}</strong></span>
+        <span>Coût MO réel : <strong>${eurRaw(c.hConso*c.txH)}</strong></span>
+      </div>`:''}
+    </div>
+    ${catBars?`<div class="card" style="margin-bottom:14px"><div class="card-title">Répartition par catégorie</div>${catBars}</div>`:''}
+    <div class="card">
+      <div class="tabs">
+        <button class="tab-btn${tab==='semaine'?' active':''}" data-action="hTab" data-val="semaine">Saisie hebdomadaire</button>
+        <button class="tab-btn${tab==='compagnons'?' active':''}" data-action="hTab" data-val="compagnons">Compagnons (${d.compagnons.length})</button>
+      </div>
+
+      ${tab==='compagnons'?`
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Prénom</th><th>Nom</th><th>Catégorie</th><th>Total cumulé</th><th></th></tr></thead>
+            <tbody>${compList||'<tr><td colspan="5" style="text-align:center;color:var(--sub);padding:20px">Aucun compagnon — cliquez "Ajouter"</td></tr>'}</tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" data-action="addRow" data-list="compagnons">${svgIcon(ico.plus,13)} Ajouter compagnon</button>
+      `:`
+        <div class="week-nav">
+          <button type="button" onclick="navWeek('prev')">${svgIcon('<polyline points="15 18 9 12 15 6"/>',16)}</button>
+          <span class="week-label">Semaine ${weekNum} — ${fmtMon(mon)} au ${fmtMon(sun)}</span>
+          <button type="button" onclick="navWeek('next')">${svgIcon('<polyline points="9 18 15 12 9 6"/>',16)}</button>
+          <span style="font-size:12px;color:var(--sub)">Total : <strong>${weekTotal>0?weekTotal+'h':'—'}</strong></span>
+        </div>
+        ${d.compagnons.length===0?`<div style="padding:24px;text-align:center;color:var(--sub)">Ajoutez des compagnons dans l'onglet "Compagnons" d'abord.</div>`:`
+        <div class="tbl-wrap">
+          <table class="week-grid">
+            <thead><tr>
+              <th>Prénom Nom</th><th>Catégorie</th>
+              ${days.map(day=>`<th class="${day.we?'day-we':''}">${day.label}<br><span style="font-weight:400;font-size:11px">${day.num} ${day.month}</span></th>`).join('')}
+              <th>Total sem.</th><th>Cumulé</th><th></th>
+            </tr></thead>
+            <tbody>${compRows}</tbody>
+            <tfoot><tr>
+              <td colspan="2" style="font-weight:700">Total journée</td>
+              ${days.map(day=>`<td class="${day.we?'day-we':''}" style="text-align:center;font-weight:700">${dayTotals[day.key]>0?dayTotals[day.key]+'h':'—'}</td>`).join('')}
+              <td style="font-weight:700;text-align:right">${weekTotal>0?weekTotal+'h':'—'}</td>
+              <td colspan="2"></td>
+            </tr></tfoot>
+          </table>
+        </div>`}
+        <button class="add-row-btn" type="button" style="margin-top:8px" onclick="setHTab('compagnons')">${svgIcon(ico.plus,13)} Gérer les compagnons</button>
+      `}
+    </div>
+  `;
+}
+
+// Réserves
+function renderReserves(d,c){
+  const rows=d.reserves.flatMap((r,i)=>{
+    const autoImpact=r.dateConstat&&r.dateLeveePrev?Math.round((new Date(r.dateLeveePrev)-new Date(r.dateConstat))/86400000):null;
+    const impactDisplay=autoImpact!==null?autoImpact:r.impact;
+    return[
+      `<tr>
+        <td>${r.num}</td>
+        <td><select name="reserves.${i}.type">
+          ${['OPR','OPL','Interne'].map(v=>`<option${r.type===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td><input type="text" name="reserves.${i}.lot" value="${esc(r.lot)}" style="width:70px"></td>
+        <td><input type="text" name="reserves.${i}.description" value="${esc(r.description)}" style="width:160px"></td>
+        <td><input type="text" name="reserves.${i}.entreprise" value="${esc(r.entreprise)}" style="width:100px"></td>
+        <td><input type="date" name="reserves.${i}.dateConstat" value="${r.dateConstat||''}"></td>
+        <td><input type="date" name="reserves.${i}.dateLeveePrev" value="${r.dateLeveePrev||''}"></td>
+        <td class="${autoImpact!==null?'auto':''}">
+          ${autoImpact!==null
+            ?`<strong>${impactDisplay}j</strong>`
+            :`<input type="number" name="reserves.${i}.impact" value="${esc(r.impact)}" style="width:55px"> j`}
+        </td>
+        <td><select name="reserves.${i}.statut">
+          ${['Ouverte','En cours','Levée'].map(v=>`<option${r.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td><input type="date" name="reserves.${i}.dateLeveeReel" value="${r.dateLeveeReel||''}"></td>
+        <td style="white-space:nowrap">
+          <button class="detail-expand-btn" data-action="toggleDetail" data-key="res${i}" title="Détail">▼ Détail</button>
+          <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="reserves" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+        </td>
+      </tr>`,
+      `<tr id="detail-row-res${i}" class="detail-row" style="display:${r.detailNote?'table-row':'none'}">
+        <td colspan="11">
+          <label class="form-label" style="display:block;margin-bottom:4px">Description détaillée / Note de travaux</label>
+          <textarea name="reserves.${i}.detailNote" class="form-textarea" rows="3" style="width:100%;max-width:700px">${esc(r.detailNote||'')}</textarea>
+        </td>
+      </tr>`
+    ];
+  }).join('');
+  return`
+    <h1 class="page-title">Réserves OPR / OPL</h1>
+    <div class="kpi-strip" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total réserves</div><div class="kpi-value">${c.resTotal}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Ouvertes</div><div class="kpi-value" style="color:${c.resOuvertes>0?'var(--neg)':'var(--sub)'}">${c.resOuvertes}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Levées</div><div class="kpi-value" style="color:var(--pos)">${c.resLevees}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Liste des réserves</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Type</th><th>Lot</th><th>Description</th><th>Entreprise</th><th>Date constat</th><th>Levée prév.</th><th>Impact (j) <span style="font-weight:400;font-size:10px">auto</span></th><th>Statut</th><th>Levée réelle</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="reserves">${svgIcon(ico.plus,13)} Ajouter réserve</button>
+    </div>
+  `;
+}
+
+// Checklist
+function renderChecklist(d,c){
+  function phaseHtml(list,path,title){
+    const done=list.filter(x=>x.done).length;
+    const total=list.length;
+    return`
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title" style="margin:0">${title}</div>
+          <span class="badge ${done===total?'badge-green':'badge-blue'}">${done}/${total}</span>
+        </div>
+        <div class="prog-bar" style="margin-bottom:12px"><div class="prog-fill" style="width:${total?done/total*100:0}%;background:var(--pos)"></div></div>
+        ${list.map((item,i)=>`
+          <div class="cl-item">
+            <input type="checkbox" name="${path}.${i}.done" ${item.done?'checked':''}>
+            <span class="cl-label${item.done?' done':''}">${esc(item.item)}</span>
+            <input type="date" name="${path}.${i}.date" value="${item.date||''}" class="form-input cl-date" style="width:130px">
+            <input type="text" name="${path}.${i}.responsable" value="${esc(item.responsable)}" class="form-input cl-resp" placeholder="Responsable" style="width:140px">
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+  return`
+    <h1 class="page-title">Check-list</h1>
+    ${phaseHtml(d.checklistDemarrage,'checklistDemarrage','Phase 1 — Démarrage')}
+    ${phaseHtml(d.checklistReception,'checklistReception','Phase 2 — Réception')}
+  `;
+}
+
+// TS & Aléas
+function renderTS(d,c){
+  const rows=d.ts.flatMap((t,i)=>{
+    const isRefuse=t.statut==='Refusé';
+    const accordeVal=isRefuse?'0':t.mtAccorde||'';
+    const statutColor=t.statut==='Accepté'?'var(--pos)':t.statut==='Refusé'?'var(--neg)':t.statut==='En avenant'?'var(--acc)':'var(--warn)';
+    return[
+      `<tr>
+        <td><input type="text" name="ts.${i}.num" value="${esc(t.num)}" style="width:65px"></td>
+        <td><input type="date" name="ts.${i}.date" value="${t.date||''}"></td>
+        <td><input type="text" name="ts.${i}.nature" value="${esc(t.nature)}" style="width:140px"></td>
+        <td><input type="text" name="ts.${i}.demandeur" value="${esc(t.demandeur)}" style="width:100px"></td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="ts.${i}.mtEstime" value="${t.mtEstime||''}" style="width:80px"></div></td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="ts.${i}.mtAccorde" value="${accordeVal}" style="width:80px"${isRefuse?' disabled':''}></div></td>
+        <td><select name="ts.${i}.statut" style="color:${statutColor};font-weight:600">
+          ${['En attente','Accepté','Refusé','En avenant'].map(v=>`<option${t.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select></td>
+        <td style="white-space:nowrap"><input type="number" name="ts.${i}.impactPlanning" value="${esc(t.impactPlanning)}" style="width:55px"> j</td>
+        <td><div class="amt-cell"><span class="sym">€</span><input type="text" name="ts.${i}.impactBudget" value="${esc(t.impactBudget)}" style="width:80px"></div></td>
+        <td><input type="text" name="ts.${i}.numAvenant" value="${esc(t.numAvenant)}" style="width:75px"></td>
+        <td style="white-space:nowrap">
+          <button class="detail-expand-btn" data-action="toggleDetail" data-key="ts${i}" title="Détail">▼ Détail</button>
+          <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="ts" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+        </td>
+      </tr>`,
+      `<tr id="detail-row-ts${i}" class="detail-row" style="display:${t.detail?'table-row':'none'}">
+        <td colspan="11">
+          <label class="form-label" style="display:block;margin-bottom:4px">Description détaillée de la nature des travaux</label>
+          <textarea name="ts.${i}.detail" class="form-textarea" rows="3" style="width:100%;max-width:700px">${esc(t.detail||'')}</textarea>
+        </td>
+      </tr>`
+    ];
+  }).join('');
+  return`
+    <h1 class="page-title">TS & Aléas</h1>
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">TS total</div><div class="kpi-value">${d.ts.filter(t=>t.nature).length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">En attente</div><div class="kpi-value" style="color:${c.tsEnAttente>0?'var(--warn)':'var(--sub)'}">${c.tsEnAttente}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Montant estimé</div><div class="kpi-value" style="font-size:17px">${c.tsEstime>0?eurRaw(c.tsEstime):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Montant accordé</div><div class="kpi-value" style="font-size:17px;color:var(--pos)">${c.tsAccorde>0?eurRaw(c.tsAccorde):'—'}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Liste TS & Aléas <span class="note" style="font-size:11px;margin-left:6px">— Cliquez "▼ Détail" pour ajouter une description libre</span></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Réf.</th><th>Date</th><th>Nature</th><th>Demandeur</th><th>Mt estimé</th><th>Mt accordé</th><th>Statut</th><th>Impact planning</th><th>Impact budget</th><th>N° avenant</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="ts">${svgIcon(ico.plus,13)} Ajouter TS</button>
+    </div>
+  `;
+}
+
+// CR Chantier
+function renderCR(d,c){
+  const cr=d.cr;
+  const histRows=d.crHistorique.map((h,i)=>`<tr>
+    <td><input type="text" name="crHistorique.${i}.num" value="${esc(h.num)}" style="width:70px"></td>
+    <td><input type="date" name="crHistorique.${i}.date" value="${h.date||''}"></td>
+    <td><input type="text" name="crHistorique.${i}.type" value="${esc(h.type)}" style="width:140px"></td>
+    <td><input type="text" name="crHistorique.${i}.redacteur" value="${esc(h.redacteur)}" style="width:110px"></td>
+    <td><input type="number" name="crHistorique.${i}.avancement" value="${h.avancement||''}" style="width:60px"> %</td>
+    <td><input type="text" name="crHistorique.${i}.pointsLeves" value="${esc(h.pointsLeves)}" style="width:120px"></td>
+    <td><input type="text" name="crHistorique.${i}.pointsOuverts" value="${esc(h.pointsOuverts)}" style="width:120px"></td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="crHistorique" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+
+  function field(path,label,type='text',opts=null){
+    const val=getVal(d,path);
+    if(type==='textarea')return`<div class="form-field" style="grid-column:span 2"><label class="form-label">${label}</label><textarea class="form-textarea" name="${path}" rows="3">${esc(val)}</textarea></div>`;
+    if(type==='select')return`<div class="form-field"><label class="form-label">${label}</label><select class="form-select" name="${path}">${opts.map(v=>`<option${val===v?' selected':''}>${v}</option>`).join('')}</select></div>`;
+    return`<div class="form-field"><label class="form-label">${label}</label><input type="${type}" class="form-input" name="${path}" value="${esc(val)}"></div>`;
+  }
+
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h1 class="page-title" style="margin:0">CR Chantier</h1>
+      <button class="btn btn-primary" data-action="exportCR">${svgIcon(ico.pdf,14)} Exporter PDF</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="card">
+        <div class="card-title">Identification</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          ${field('cr.numCR','N° CR')}
+          ${field('cr.date','Date','date')}
+          ${field('cr.type','Type','select',['Réunion de chantier','Réunion de coordination','Réunion de direction'])}
+          ${field('cr.redacteur','Rédacteur')}
+          ${field('cr.presents','Présents','text')}
+          ${field('cr.diffusion','Diffusion','text')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Avancement</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          ${field('cr.avancement','Avancement global (%)','number')}
+          ${field('cr.phase','Phase')}
+          ${field('cr.meteo','Météo')}
+          ${field('cr.retards','Retards constatés','textarea')}
+          ${field('cr.actions','Actions décidées','textarea')}
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="card">
+        <div class="card-title">Finances</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          ${field('cr.sitEmise','Situation émise')}
+          ${field('cr.encaissement','Encaissement')}
+          ${field('cr.avenantsCours','Avenants en cours')}
+          ${field('cr.tsValides','TS validés')}
+          ${field('cr.litiges','Litiges','textarea')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Sécurité / Qualité</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          ${field('cr.incidents','Incidents sécurité')}
+          ${field('cr.effectif','Effectif présent')}
+          ${field('cr.qualite','Points qualité')}
+          ${field('cr.nc','Non-conformités')}
+          ${field('cr.environnement','Environnement')}
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Sous-traitants</div>
+      <div class="form-grid">
+        ${field('cr.stPresents','ST présents')}
+        ${field('cr.pointsST','Points ST','textarea')}
+        ${field('cr.agrements','Agréments en attente')}
+        ${field('cr.livraisons','Livraisons prévues')}
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Points à lever</div>
+      <div class="form-grid">
+        ${field('cr.d1','Point 1','textarea')}
+        ${field('cr.d2','Point 2','textarea')}
+        ${field('cr.d3','Point 3','textarea')}
+        ${field('cr.prochaine','Prochaine réunion','date')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Historique CR (${c.crCount})</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Réf.</th><th>Date</th><th>Type</th><th>Rédacteur</th><th>Avancement</th><th>Points levés</th><th>Points ouverts</th><th></th></tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="crHistorique">${svgIcon(ico.plus,13)} Ajouter CR</button>
+    </div>
+  `;
+}
+
+// PDF export
+function exportCRPdf(){
+  const ch=getActive();if(!ch)return;
+  const d=ch.d;const cr=d.cr;
+  const win=window.open('','_blank');
+  if(!win)return alert('Autoriser les popups pour l\'export PDF.');
+  win.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+  <title>CR Chantier — ${esc(d.ident.nom||'')}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11pt;color:#222;padding:20mm}
+    h1{font-size:16pt;color:#354a5f;margin-bottom:8pt}
+    h2{font-size:12pt;color:#354a5f;border-bottom:1px solid #cdd8e2;padding-bottom:4pt;margin:12pt 0 6pt}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8pt;margin-bottom:8pt}
+    .field{margin-bottom:5pt}
+    .label{font-size:8pt;font-weight:700;color:#6a7a8a;text-transform:uppercase;letter-spacing:.4px}
+    .value{font-size:10pt;border-bottom:1px solid #e5e8ec;padding-bottom:2pt;min-height:16pt}
+    @media print{body{padding:10mm} @page{margin:10mm}}
+  </style></head><body>
+  <h1>CR Chantier — ${esc(d.ident.nom||'')} (${esc(cr.numCR||'')})</h1>
+  <div class="grid">
+    ${[['Date',cr.date],['Type',cr.type],['Rédacteur',cr.redacteur],['Présents',cr.presents],['Avancement',cr.avancement?cr.avancement+'%':''],['Météo',cr.meteo]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  </div>
+  <h2>Avancement & Actions</h2>
+  <div class="field"><div class="label">Retards constatés</div><div class="value" style="min-height:40pt">${esc(cr.retards||'')}</div></div>
+  <div class="field" style="margin-top:6pt"><div class="label">Actions décidées</div><div class="value" style="min-height:40pt">${esc(cr.actions||'')}</div></div>
+  <h2>Finances</h2>
+  <div class="grid">
+    ${[['Situation émise',cr.sitEmise],['Encaissement',cr.encaissement],['Avenants en cours',cr.avenantsCours],['TS validés',cr.tsValides]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  </div>
+  <h2>Sécurité / Qualité</h2>
+  <div class="grid">
+    ${[['Incidents',cr.incidents],['Effectif',cr.effectif],['Qualité',cr.qualite],['Non-conformités',cr.nc]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  </div>
+  ${cr.d1||cr.d2||cr.d3?`<h2>Points à lever</h2>
+  <div class="field"><div class="label">Point 1</div><div class="value">${esc(cr.d1||'')}</div></div>
+  <div class="field" style="margin-top:4pt"><div class="label">Point 2</div><div class="value">${esc(cr.d2||'')}</div></div>
+  <div class="field" style="margin-top:4pt"><div class="label">Point 3</div><div class="value">${esc(cr.d3||'')}</div></div>`:''}
+  ${cr.prochaine?`<h2>Prochaine réunion</h2><div class="value">${esc(cr.prochaine)}</div>`:''}
+  </body></html>`);
+  win.document.close();
+  setTimeout(()=>win.print(),350);
+}
+
+// ─── Screen renderers ─────────────────────────────────────────────────────────
+
+// Dashboard
+function renderDashboard(d,c){
+  const s=summarize(d);
+  const alertsHtml=c.alerts.length
+    ?c.alerts.map(a=>`<div class="alert-item">${svgIcon(a.icon,16,'style="color:var(--warn)"')} ${a.msg}</div>`).join('')
+    :'<div style="color:var(--pos);font-size:13px">✓ Aucune alerte active</div>';
+  return`
+    <h1 class="page-title">Tableau de bord</h1>
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Marché actualisé</div><div class="kpi-value" style="font-size:17px">${c.marcheActualise>0?eurRaw(c.marcheActualise):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">EAC</div><div class="kpi-value" style="font-size:17px">${c.eac>0?eurRaw(c.eac):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Marge brute</div><div class="kpi-value" style="font-size:17px;color:${c.margeBrute<0?'var(--neg)':c.margeBrute>0?'var(--pos)':'var(--sub)'}">${c.budgetCR>0?eurRaw(c.margeBrute):'—'}</div><div class="kpi-sub">${c.budgetCR>0?pct(c.tauxMarge):''}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Facturé / Encaissé</div><div class="kpi-value" style="font-size:15px">${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</div><div class="kpi-sub">${c.totalEncaisse>0?'Encaissé : '+eurRaw(c.totalEncaisse):''}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+      <div class="card">
+        <div class="card-title">Alertes (${c.alerts.length})</div>
+        ${alertsHtml}
+      </div>
+      <div class="card">
+        <div class="card-title">Synthèse financière</div>
+        ${[
+          ['Marché initial',c.marcheInitial>0?eurRaw(c.marcheInitial):'—'],
+          ['Avenants signés',c.avenantsSignes!==0?eurRaw(c.avenantsSignes):'—'],
+          ['Marché actualisé',c.marcheActualise>0?eurRaw(c.marcheActualise):'—'],
+          ['Budget CR',c.budgetCR>0?eurRaw(c.budgetCR):'—'],
+          ['Réel engagé',c.reelEngage>0?eurRaw(c.reelEngage):'—'],
+          ['Marge brute',c.budgetCR>0?eurRaw(c.margeBrute):'—'],
+        ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="color:var(--sub)">${l}</span><strong>${v}</strong></div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Identification du chantier</div>
+      <div class="form-grid">
+        ${[
+          ['ident.nom','Nom du chantier','text'],['ident.otp','OTP / Référence','text'],['ident.adresse','Adresse','text'],
+          ['ident.mo','Maître d\'ouvrage','text'],['ident.moe','Maître d\'œuvre','text'],['ident.ca','Chargé d\'affaires','text'],
+          ['ident.chef','Chef de chantier','text'],['ident.sps','Coordinateur SPS','text'],['ident.bc','Bureau de contrôle','text'],
+          ['ident.bet','BET','text'],['ident.inspection','Inspection du travail','text'],['ident.prevention','Chargé prévention','text'],
+          ['ident.dateOS','Date OS','date'],['ident.debut','Date début','date'],['ident.fin','Date fin prévue','date'],
+          ['ident.reception','Date réception','date'],
+        ].map(([path,label,type])=>`
+          <div class="form-field">
+            <label class="form-label">${label}</label>
+            <input type="${type}" name="${path}" value="${esc(getVal(d,path))}" class="form-input">
+          </div>
+        `).join('')}
+        <div class="form-field">
+          <label class="form-label">Avancement lot (%)</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="prog-bar" style="flex:1;height:8px"><div class="prog-fill" style="width:${Math.min(c.planAv,100)}%;background:var(--acc)"></div></div>
+            <strong style="font-size:14px;min-width:40px;text-align:right">${c.planAv.toFixed(0)}%</strong>
+          </div>
+          <div class="note">Calculé automatiquement depuis le planning</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Finance / RAF
+function renderFinance(d,c){
+  // ── Flux financier ──────────────────────────────────────────────────────────
+  const txFact=c.marcheActualise>0?c.totalFacture/c.marcheActualise*100:0;
+  const txEnc=c.totalFacture>0?c.totalEncaisse/c.totalFacture*100:0;
+  const retardsSit=c.situations.filter(s=>s.retard>0).length;
+
+  // ── Budget vs Réel par poste ─────────────────────────────────────────────
+  const moReelAuto=Math.round(c.hConso*(c.txH||n(d.heures.txHoraire)));
+  const posteRows=d.postes.map((p,i)=>{
+    const src=p.source||'manuel';
+    const isMO=src==='heures';
+    const av=n(p.avancement);
+    const bp=n(p.budgetPrevu);
+    const re=isMO?moReelAuto:n(p.reelEngage);
+    const rae=n(p.resteAEng)||Math.max(0,bp-re);
+    const eacP=re+rae;
+    const ecart=bp-eacP;
+    return`<tr${isMO?' style="background:#f0f8ff"':''}>
+      <td>
+        <input type="text" name="postes.${i}.nom" value="${esc(p.nom)}" style="width:130px" placeholder="Poste ${i+1}">
+      </td>
+      <td>
+        <select name="postes.${i}.source" style="font-size:11px;color:${isMO?'var(--acc)':'var(--sub)'};border:1px solid var(--border);border-radius:4px;padding:2px 4px">
+          <option value="manuel"${src==='manuel'?' selected':''}>Manuel</option>
+          <option value="heures"${src==='heures'?' selected':''}>⟳ Heures MO</option>
+        </select>
+      </td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.budgetPrevu" value="${p.budgetPrevu||''}" style="width:90px"></div></td>
+      <td>${isMO
+        ?`<div class="amt-cell" title="Calculé depuis Heures MO : ${c.hConso}h × ${c.txH||n(d.heures.txHoraire)}€/h"><span class="sym">€</span><span style="font-weight:600;color:var(--acc);padding:4px 6px">${moReelAuto>0?moReelAuto.toLocaleString('fr-FR'):'—'}</span>${svgIcon('<path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"/>',12,'style="color:var(--acc);opacity:.6"')}</div>`
+        :`<div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.reelEngage" value="${p.reelEngage||''}" style="width:90px"></div>`}
+      </td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.resteAEng" value="${p.resteAEng||''}" style="width:90px"></div></td>
+      <td class="auto" style="font-weight:600;color:${ecart<0?'var(--neg)':ecart>0?'var(--pos)':'var(--sub)'}">${bp>0?eurRaw(ecart):'—'}</td>
+      <td style="min-width:120px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(av,100)}%;background:${av>=100?'var(--pos)':re>bp?'var(--neg)':'var(--acc)'}"></div></div>
+          <input type="number" name="postes.${i}.avancement" value="${p.avancement||''}" style="width:42px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
+        </div>
+      </td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="postes" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  const posteTotBP=d.postes.reduce((s,p)=>s+n(p.budgetPrevu),0);
+  const posteTotRE=d.postes.reduce((s,p)=>s+(p.source==='heures'?moReelAuto:n(p.reelEngage)),0);
+  const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-(p.source==='heures'?moReelAuto:n(p.reelEngage))),0);
+
+  // ── Situations ──────────────────────────────────────────────────────────────
+  const sitRows=c.situations.map((sit,i)=>{
+    const statColor=sit.statut==='Payé'?'var(--pos)':sit.retard>0?'var(--neg)':sit.statut==='Visé'?'var(--acc)':'var(--sub)';
+    const txSit=c.marcheActualise>0?n(sit.montantHT)/c.marcheActualise*100:0;
+    return`<tr style="${sit.retard>0?'background:#fff5f5':''}">
+      <td style="font-weight:600">${sit.num}</td>
+      <td><input type="text" name="situations.${i}.periode" value="${esc(sit.periode)}" style="width:110px"></td>
+      <td><input type="date" name="situations.${i}.dateEnvoi" value="${sit.dateEnvoi||''}"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="situations.${i}.montantHT" value="${sit.montantHT||''}" style="width:90px"></div></td>
+      <td class="auto" style="font-weight:500">${sit.cumul>0?eurRaw(sit.cumul):'—'}</td>
+      <td class="auto">${txSit>0?txSit.toFixed(1)+'%':'—'}</td>
+      <td><input type="date" name="situations.${i}.datePaiement" value="${sit.datePaiement||''}"></td>
+      <td><input type="number" name="situations.${i}.delai" value="${sit.delai||'30'}" style="width:45px"> j</td>
+      <td>
+        <select name="situations.${i}.statut" style="color:${statColor};font-weight:600">
+          ${['—','En attente','Visé','Payé'].map(v=>`<option${sit.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td>${sit.retard>0
+        ?`<span style="color:var(--neg);font-weight:700;font-size:12px">${sit.retard}j retard</span>`
+        :sit.statut==='Payé'
+          ?`<span style="color:var(--pos);font-size:12px">✓</span>`
+          :'<span style="color:var(--sub);font-size:12px">—</span>'}
+      </td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="situations" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  // ── Avenants ────────────────────────────────────────────────────────────────
+  const avCumul=d.avenants.reduce((s,a)=>s+n(a.montant),0);
+  const avRows=d.avenants.map((av,i)=>{
+    const statColor=av.statut==='Signé'?'var(--pos)':av.statut==='Refusé'?'var(--neg)':av.statut==='En cours'?'var(--warn)':'var(--sub)';
+    return`<tr>
+      <td style="font-weight:600">${av.num}</td>
+      <td><input type="text" name="avenants.${i}.designation" value="${esc(av.designation)}" style="width:170px"></td>
+      <td><input type="date" name="avenants.${i}.date" value="${av.date||''}"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="avenants.${i}.montant" value="${av.montant||''}" style="width:90px"></div></td>
+      <td style="white-space:nowrap"><input type="number" name="avenants.${i}.impactDelai" value="${esc(av.impactDelai)}" style="width:50px"> j</td>
+      <td><input type="text" name="avenants.${i}.poste" value="${esc(av.poste)}" style="width:80px"></td>
+      <td>
+        <select name="avenants.${i}.statut" style="color:${statColor};font-weight:600">
+          ${['—','En cours','Signé','Refusé'].map(v=>`<option${av.statut===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" name="avenants.${i}.obs" value="${esc(av.obs)}" style="width:110px"></td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="avenants" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  // ── RAF table ───────────────────────────────────────────────────────────────
+  let rafTotBI=0,rafTotBV=0,rafTotReel=0,rafTotRAD=0,rafTotEAC=0;
+  const rafRows=c.rafDefs.map(row=>{
+    const rl=d.raf.lines[row.id]||{};
+    const bi=n(rl.bi);const bv=n(rl.bv);
+    const rad=n(rl.rad);
+    const reel=row.manual?n(rl.reel):row.reel;
+    const eng=row.manual?n(rl.eng):row.eng;
+    const eac=reel+rad;
+    const pctCA=c.marcheActualise>0?eac/c.marcheActualise*100:0;
+    const monthVal=c.rafCnt>0?rad/c.rafCnt:0;
+    const ecartRAF=bv>0?bv-eac:0;
+    rafTotBI+=bi;rafTotBV+=bv;rafTotReel+=reel;rafTotRAD+=rad;rafTotEAC+=eac;
+    return`<tr>
+      <td class="sticky" style="font-weight:500">${esc(row.label)}</td>
+      <td style="font-size:11px;color:var(--sub);white-space:nowrap">${esc(row.src)}</td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:80px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px"></div></td>
+      <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad||''}" style="width:80px"></div></td>
+      <td class="auto" style="font-weight:600">${eac>0?eurRaw(eac):'—'}</td>
+      <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
+      <td class="auto">${pctCA>0?pctCA.toFixed(1)+'%':'—'}</td>
+      ${row.manual
+        ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" style="width:75px"></div></td><td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:75px"></div></td>`
+        :`<td class="auto">${reel>0?eurRaw(reel):'—'}</td><td class="auto">${eng>0?eurRaw(eng):'—'}</td>`}
+      ${c.rafMonths.map(m=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0?eurRaw(monthVal):'—'}</td>`).join('')}
+    </tr>`;
+  }).join('');
+
+  const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
+  const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
+
+  // ── Synthèse marché ─────────────────────────────────────────────────────────
+  function flowBox(label,value,color='var(--text)',sub=''){
+    return`<div style="flex:1;min-width:130px;background:#fff;border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${label}</div>
+      <div style="font-size:17px;font-weight:700;color:${color}">${value}</div>
+      ${sub?`<div style="font-size:11px;color:var(--sub);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+  }
+  const arrow=`<div style="color:var(--sub);font-size:18px;align-self:center">→</div>`;
+
+  return`
+    <h1 class="page-title">Suivi financier</h1>
+
+    <!-- Saisie paramètres de base -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Paramètres financiers</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="form-field"><label class="form-label">Marché initial HT</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.marcheInitial" value="${d.finance.marcheInitial||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Avenants signés</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.avenantsSignes" value="${d.finance.avenantsSignes||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Budget CR (coût revient)</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Réel engagé à date</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Reste à engager</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.resteAEngager" value="${d.finance.resteAEngager||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Frais généraux chantier</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.fgChantier" value="${d.finance.fgChantier||''}" class="form-input"></div></div>
+      </div>
+    </div>
+
+    <!-- Flux financier visuel -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Vue d'ensemble financière</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:16px">
+        ${flowBox('Marché initial',c.marcheInitial>0?eurRaw(c.marcheInitial):'—')}
+        ${arrow}
+        ${flowBox('+ Avenants signés',c.avenantsSignes>0?'+'+eurRaw(c.avenantsSignes):c.avenantsSignes<0?eurRaw(c.avenantsSignes):'—',c.avenantsSignes>=0?'var(--pos)':'var(--neg)')}
+        ${arrow}
+        ${flowBox('= Marché actualisé',c.marcheActualise>0?eurRaw(c.marcheActualise):'—','var(--acc)')}
+        ${arrow}
+        ${flowBox('Budget CR',c.budgetCR>0?eurRaw(c.budgetCR):'—')}
+        ${arrow}
+        ${flowBox('EAC',c.eac>0?eurRaw(c.eac):'—')}
+        ${arrow}
+        ${flowBox('Marge brute',c.budgetCR>0?eurRaw(c.margeBrute):'—',c.margeBrute<0?'var(--neg)':'var(--pos)',c.budgetCR>0?pct(c.tauxMarge):'')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <!-- Facturation -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Facturation</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>Facturé</span><strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong>
+          </div>
+          <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txFact,100)}%;background:var(--acc)"></div></div>
+          <div class="note">${txFact.toFixed(1)}% du marché actualisé${retardsSit>0?` · <span style="color:var(--neg)">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}</div>
+        </div>
+        <!-- Encaissement -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Encaissement</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>Encaissé</span><strong>${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong>
+          </div>
+          <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txEnc,100)}%;background:var(--pos)"></div></div>
+          <div class="note">${txEnc.toFixed(1)}% des situations facturées</div>
+        </div>
+        <!-- RAF -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Reste à faire total</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>RAD consolidé</span><strong>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub)">
+            <span>EAC RAF</span><span>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Budget vs Réel par poste -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Budget vs Réel par poste analytique</div>
+        ${c.hConso>0?`<div style="font-size:12px;background:#e8f4fd;border:1px solid #b3d9f5;border-radius:6px;padding:6px 12px;color:#0056b3">
+          Heures MO : <strong>${c.hConso}h</strong> × <strong>${c.txH||n(d.heures.txHoraire)}€/h</strong> = <strong>${moReelAuto.toLocaleString('fr-FR')} €</strong>
+          &nbsp;·&nbsp; Assignez "⟳ Heures MO" à un poste pour lier automatiquement
+        </div>`:''}
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Poste</th><th>Source</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
+          <tbody>${posteRows}</tbody>
+          <tfoot><tr style="background:#f0f2f5;font-weight:700">
+            <td colspan="2">Total</td>
+            <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
+            <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
+            <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
+            <td style="color:${(posteTotBP-posteTotRE-posteTotRAE)<0?'var(--neg)':'var(--pos)'}">
+              ${posteTotBP>0?eurRaw(posteTotBP-posteTotRE-posteTotRAE):'—'}
+            </td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="postes">${svgIcon(ico.plus,13)} Ajouter poste</button>
+    </div>
+
+    <!-- Situations de travaux -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Situations de travaux</div>
+        <div style="display:flex;gap:12px;font-size:12px">
+          <span>Facturé : <strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong></span>
+          <span>Encaissé : <strong style="color:var(--pos)">${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong></span>
+          ${retardsSit>0?`<span style="color:var(--neg);font-weight:600">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Période</th><th>Date envoi</th><th>Montant HT</th><th>Cumul HT</th><th>% marché</th><th>Date paiement</th><th>Délai</th><th>Statut</th><th>État</th><th></th></tr></thead>
+          <tbody>${sitRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="situations">${svgIcon(ico.plus,13)} Ajouter situation</button>
+    </div>
+
+    <!-- Avenants -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Avenants</div>
+        <div style="font-size:12px">
+          Cumul avenants : <strong style="color:${avCumul>=0?'var(--pos)':'var(--neg)'}">${avCumul!==0?eurRaw(avCumul):'—'}</strong>
+          &nbsp;·&nbsp; ${d.avenants.filter(a=>a.statut==='Signé').length} signé(s) / ${d.avenants.filter(a=>a.designation).length} total
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Désignation</th><th>Date</th><th>Montant HT</th><th>Impact délai</th><th>Poste</th><th>Statut</th><th>Obs.</th><th></th></tr></thead>
+          <tbody>${avRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="avenants">${svgIcon(ico.plus,13)} Ajouter avenant</button>
+    </div>
+
+    <!-- RAF -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Reste à faire (RAF)</div>
+      <div class="param-row" style="margin-bottom:10px">
+        <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Méthode</label><select name="raf.methode" class="form-select">
+          ${['Avancement physique','À terminaison','Réengagement'].map(v=>`<option${d.raf.methode===v?' selected':''}>${v}</option>`).join('')}
+        </select></div>
+        <div class="form-field" style="flex:2"><label class="form-label">Commentaires</label><input type="text" name="raf.commentaires" value="${esc(d.raf.commentaires)}" class="form-input"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2;min-width:130px">Poste</th>
+            <th>Source</th><th>Budget init.</th><th>Budget validé</th>
+            <th>Réel cumulé</th><th>Reste à dép.</th><th>EAC</th><th>Écart BV-EAC</th><th>% CA</th>
+            <th>Réel M</th><th>Engagement</th>
+            ${c.rafMonths.map(m=>`<th style="white-space:nowrap">${m}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rafRows}</tbody>
+          <tfoot><tr style="background:#f0f2f5;font-weight:700">
+            <td colspan="2">Total RAF</td>
+            <td>${rafTotBI>0?eurRaw(rafTotBI):'—'}</td>
+            <td>${rafTotBV>0?eurRaw(rafTotBV):'—'}</td>
+            <td>${rafTotReel>0?eurRaw(rafTotReel):'—'}</td>
+            <td>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</td>
+            <td>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</td>
+            <td style="color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?eurRaw(rafTotEcart):'—'}</td>
+            <td>${rafTotPctCA>0?rafTotPctCA.toFixed(1)+'%':'—'}</td>
+            <td colspan="${2+c.rafMonths.length}"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// ST
+function renderST(d,c){
+  const stKpis=[
+    ['ST actifs',c.stActifs,'var(--text)'],
+    ['Marché ST total',c.stTotal>0?eurRaw(c.stTotal):'—','var(--text)'],
+    ['Situations émises',c.stSitTotal>0?eurRaw(c.stSitTotal):'—','var(--text)'],
+    ['DC4 manquants',c.stDC4>0?c.stDC4:'0',c.stDC4>0?'var(--neg)':'var(--pos)'],
+  ];
+  const rows=d.st.map((s,i)=>{
+    const dc4Color=s.dc4==='Oui'?'var(--pos)':'var(--neg)';
+    const agColor=s.agrement==='Oui'?'var(--pos)':'var(--warn)';
+    return`<tr>
+      <td><span class="dot" style="background:${s.entreprise?(s.dc4==='Oui'?'var(--pos)':'var(--warn)'):'var(--border)'}"></span></td>
+      <td><input type="text" name="st.${i}.entreprise" value="${esc(s.entreprise)}" style="width:140px"></td>
+      <td><input type="text" name="st.${i}.lot" value="${esc(s.lot)}" style="width:100px"></td>
+      <td><select name="st.${i}.categorie">
+        ${['ST Moyen','ST Compétence'].map(v=>`<option${s.categorie===v?' selected':''}>${v}</option>`).join('')}
+      </select></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.montantHT" value="${s.montantHT||''}" style="width:90px"></div></td>
+      <td style="color:${dc4Color};font-weight:600">
+        <select name="st.${i}.dc4" style="color:${dc4Color}">
+          ${['Oui','Non'].map(v=>`<option${s.dc4===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td style="color:${agColor};font-weight:600">
+        <select name="st.${i}.agrement" style="color:${agColor}">
+          ${['Oui','Non'].map(v=>`<option${s.agrement===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.mtSit" value="${s.mtSit||''}" style="width:85px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="st.${i}.rg" value="${s.rg||''}" style="width:70px"></div></td>
+      <td><select name="st.${i}.statut">
+        ${['—','En cours','Terminé','Litigieux'].map(v=>`<option${s.statut===v?' selected':''}>${v}</option>`).join('')}
+      </select></td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="st" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`;
+  }).join('');
+  return`
+    <h1 class="page-title">Sous-traitants</h1>
+    <div class="kpi-strip">
+      ${stKpis.map(([l,v,col])=>`<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value" style="color:${col};font-size:17px">${v}</div></div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-title">Liste des sous-traitants</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:var(--sub)">
+        <span><span class="dot" style="background:var(--pos);display:inline-block;margin-right:4px"></span>DC4 conforme</span>
+        <span><span class="dot" style="background:var(--warn);display:inline-block;margin-right:4px"></span>DC4 à régulariser</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th></th><th>Entreprise</th><th>Lot</th><th>Catégorie</th><th>Marché HT</th><th>DC4</th><th>Agrément</th><th>Mt Situation</th><th>RG</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="st">${svgIcon(ico.plus,13)} Ajouter sous-traitant</button>
+    </div>
+  `;
+}
+
+// Fournisseurs
+function renderFournisseurs(d,c){
+  const rows=d.fournisseurs.map((f,i)=>`<tr>
+    <td><input type="text" name="fournisseurs.${i}.fournisseur" value="${esc(f.fournisseur)}" style="width:130px"></td>
+    <td><input type="text" name="fournisseurs.${i}.designation" value="${esc(f.designation)}" style="width:150px"></td>
+    <td><select name="fournisseurs.${i}.categorie">
+      ${['Fournitures','Matériel','Services'].map(v=>`<option${f.categorie===v?' selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td><input type="text" name="fournisseurs.${i}.numBC" value="${esc(f.numBC)}" style="width:90px"></td>
+    <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="fournisseurs.${i}.montant" value="${f.montant||''}" style="width:90px"></div></td>
+    <td><input type="date" name="fournisseurs.${i}.livraison" value="${f.livraison||''}"></td>
+    <td><select name="fournisseurs.${i}.recu">
+      ${['Non','Oui','Partiel'].map(v=>`<option${f.recu===v?' selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td><select name="fournisseurs.${i}.statut">
+      ${['—','En commande','Livré','Litigieux'].map(v=>`<option${f.statut===v?' selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="fournisseurs" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+  return`
+    <h1 class="page-title">Fournisseurs</h1>
+    <div class="kpi-strip">
+      <div class="kpi-card"><div class="kpi-label">Fournisseurs actifs</div><div class="kpi-value">${c.fournActifs}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total engagé</div><div class="kpi-value" style="font-size:17px">${c.fTotal>0?eurRaw(c.fTotal):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Fournitures engagées</div><div class="kpi-value" style="font-size:17px">${d.fournisseurs.filter(f=>f.categorie==='Fournitures').reduce((s,f)=>s+n(f.montant),0)>0?eurRaw(d.fournisseurs.filter(f=>f.categorie==='Fournitures').reduce((s,f)=>s+n(f.montant),0)):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Matériel engagé</div><div class="kpi-value" style="font-size:17px">${d.fournisseurs.filter(f=>f.categorie==='Matériel').reduce((s,f)=>s+n(f.montant),0)>0?eurRaw(d.fournisseurs.filter(f=>f.categorie==='Matériel').reduce((s,f)=>s+n(f.montant),0)):'—'}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Liste des fournisseurs</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Fournisseur</th><th>Désignation</th><th>Catégorie</th><th>N° BC</th><th>Montant HT</th><th>Livraison prev.</th><th>Reçu</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="fournisseurs">${svgIcon(ico.plus,13)} Ajouter fournisseur</button>
+    </div>
+  `;
+}
+
+// ─── getVal helper ────────────────────────────────────────────────────────────
+function getVal(d,path){
+  const parts=path.split('.');
+  let obj=d;
+  for(const k of parts){
+    if(obj===null||obj===undefined)return'';
+    obj=obj[k];
+  }
+  return obj??'';
+}
+
+// ─── Main render ─────────────────────────────────────────────────────────────
+function render(){
+  renderShell();
+  renderNav();
+  const main=document.getElementById('main');
+  const ch=getActive();
+  if(state.screen==='portfolio'){
+    main.innerHTML=renderPortfolio();
+    const pfs=document.getElementById('pf-search');
+    if(pfs&&pfs.addEventListener)pfs.addEventListener('input',e=>{state.pfQuery=e.target.value;render()});
+    return;
+  }
+  if(!ch){
+    main.innerHTML=`<div style="padding:40px;text-align:center;color:var(--sub)">
+      <p>Aucun chantier sélectionné.</p>
+      <button class="btn btn-primary" style="margin-top:12px" data-action="addChantier">Créer un chantier</button>
+    </div>`;
+    return;
+  }
+  const d=ch.d;
+  const c=computeAll(d);
+  const screens={
+    home:()=>renderHome(d,c),
+    dashboard:()=>renderDashboard(d,c),
+    finance:()=>renderFinance(d,c),
+    st:()=>renderST(d,c),
+    fournisseurs:()=>renderFournisseurs(d,c),
+    planning:()=>renderPlanning(d,c),
+    heures:()=>renderHeures(d,c),
+    reserves:()=>renderReserves(d,c),
+    checklist:()=>renderChecklist(d,c),
+    ts:()=>renderTS(d,c),
+    cr:()=>renderCR(d,c),
+  };
+  const fn=screens[state.screen];
+  main.innerHTML=fn?fn():`<div style="padding:40px;color:var(--sub)">Écran inconnu : ${esc(state.screen)}</div>`;
+  // wire home tiles
+  main.querySelectorAll('.tile[data-screen]').forEach(el=>{
+    el.addEventListener('click',()=>{state.screen=el.dataset.screen;render()});
+  });
+}
+
+// ─── Shell & Nav renderers ────────────────────────────────────────────────────
+function renderShell(){
+  const ch=getActive();
+  const chOptions=state.chantiers.map(c=>`<option value="${c.id}"${c.id===state.activeId?' selected':''}>${esc(c.d.ident.nom||'Sans nom')}</option>`).join('');
+  document.getElementById('shell').innerHTML=`
+    <button class="logo-btn" data-action="goHome" title="Accueil">SC</button>
+    <button class="pf-btn" data-action="goPortfolio">
+      ${svgIcon(ico.brief,14)} Portefeuille
+    </button>
+    <div class="divider"></div>
+    ${state.chantiers.length>0?`<select id="chantier-sw">${chOptions}</select>`:''}
+    <input class="shell-search" type="text" placeholder="Rechercher…" id="shell-search">
+    <div class="spacer"></div>
+    <button class="notif-btn" title="Notifications">
+      ${svgIcon(ico.bell,18)}
+      ${(ch&&summarize(ch.d).alertCount>0)?'<span class="notif-dot"></span>':''}
+    </button>
+    <div class="avatar" title="Mon compte">CA</div>
+  `;
+}
+
+const NAV_ITEMS=[
+  {id:'portfolio',icon:ico.brief,label:'Portfolio',screen:'portfolio'},
+  {id:'home',icon:ico.home,label:'Accueil',screen:'home'},
+  {sep:true},
+  {id:'dashboard',icon:ico.dash,label:'Tableau',screen:'dashboard'},
+  {id:'finance',icon:ico.fin,label:'Finances',screen:'finance'},
+  {id:'st',icon:ico.st,label:'ST',screen:'st'},
+  {id:'fournisseurs',icon:ico.fourn,label:'Fourn.',screen:'fournisseurs'},
+  {id:'planning',icon:ico.plan,label:'Planning',screen:'planning'},
+  {id:'heures',icon:ico.heure,label:'Heures',screen:'heures'},
+  {id:'reserves',icon:ico.res,label:'Réserves',screen:'reserves'},
+  {id:'checklist',icon:ico.check,label:'Checklist',screen:'checklist'},
+  {id:'ts',icon:ico.ts,label:'TS/Aléas',screen:'ts'},
+  {id:'cr',icon:ico.cr,label:'CR',screen:'cr'},
+];
+
+function renderNav(){
+  document.getElementById('nav-rail').innerHTML=NAV_ITEMS.map(item=>{
+    if(item.sep)return'<div class="nav-sep"></div>';
+    const active=state.screen===item.screen;
+    return`<button class="nav-item${active?' active':''}" data-screen="${item.screen}" title="${item.label}">
+      ${svgIcon(item.icon,18)}
+      <span class="nav-tip">${item.label}</span>
+    </button>`;
+  }).join('');
+}
+
+// ─── Portfolio screen ─────────────────────────────────────────────────────────
+function renderPortfolio(){
+  const all=state.chantiers;
+  const q=(state.pfQuery||'').toLowerCase();
+  const sf=state.pfStatut||'all';
+  let filtered=all;
+  if(q)filtered=filtered.filter(c=>{
+    const s=summarize(c.d);
+    return s.nom.toLowerCase().includes(q)||c.d.ident.otp.toLowerCase().includes(q);
+  });
+  if(sf!=='all')filtered=filtered.filter(c=>summarize(c.d).statut===sf);
+
+  // Portfolio KPIs
+  const total=all.length;
+  const marcheCum=all.reduce((s,c)=>s+summarize(c.d).marcheActualise,0);
+  const margeCum=all.reduce((s,c)=>s+summarize(c.d).marge,0);
+  const alertCum=all.reduce((s,c)=>s+summarize(c.d).alertCount,0);
+
+  const cards=filtered.map(ch=>{
+    const s=summarize(ch.d);
+    const isActive=ch.id===state.activeId;
+    return`<div class="pf-card${isActive?' pf-active':''}" data-action="openChantier" data-id="${ch.id}" style="position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text)">${esc(s.nom)}</div>
+          ${s.otp?`<div style="font-size:11px;color:var(--sub)">OTP: ${esc(s.otp)}</div>`:''}
+        </div>
+        <span class="badge ${statusBadge(s.statut)}">${s.statut}</span>
+      </div>
+      <div style="font-size:13px;color:var(--sub);margin-bottom:10px">${s.chef?'Chef: '+esc(s.chef):''}${s.mo?` · MO: ${esc(s.mo)}`:''}</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
+        <div><div style="color:var(--sub);font-size:11px">Marché</div><strong>${s.marcheActualise>0?eurRaw(s.marcheActualise):'—'}</strong></div>
+        <div><div style="color:var(--sub);font-size:11px">Marge</div><strong style="color:${s.marge<0?'var(--neg)':s.marge>0?'var(--pos)':'var(--sub)'}">${s.marcheActualise>0?pct(s.taux):'—'}</strong></div>
+        <div><div style="color:var(--sub);font-size:11px">Alertes</div><strong style="color:${s.alertCount>0?'var(--warn)':'var(--sub)'}">${s.alertCount||'—'}</strong></div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-bottom:3px">
+          <span>Avancement</span><span>${s.avancement}%</span>
+        </div>
+        <div class="prog-bar"><div class="prog-fill" style="width:${s.avancement}%;background:var(--acc)"></div></div>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" data-action="dupChantier" data-id="${ch.id}" title="Dupliquer">${svgIcon(ico.copy,13)} Dupliquer</button>
+        <button class="btn btn-danger btn-sm" data-action="delChantier" data-id="${ch.id}" title="Supprimer">${svgIcon(ico.trash,13)} Supprimer</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return`
+    <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Chantiers</div><div class="kpi-value">${total}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Marché cumulé</div><div class="kpi-value" style="font-size:16px">${marcheCum>0?eurRaw(marcheCum):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Marge cumulée</div><div class="kpi-value" style="font-size:16px;color:${margeCum<0?'var(--neg)':'var(--pos)'}">${marcheCum>0?eurRaw(margeCum):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Alertes totales</div><div class="kpi-value" style="color:${alertCum>0?'var(--warn)':'var(--sub)'}">${alertCum||'0'}</div></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <input type="text" class="form-input" id="pf-search" placeholder="Rechercher un chantier…" value="${esc(state.pfQuery)}" style="max-width:260px">
+      <div class="filter-chips">
+        ${['all','Préparation','En cours','Livraison','Réceptionné'].map(s=>`
+          <button class="chip${(state.pfStatut||'all')===s?' active':''}" data-action="pfFilter" data-val="${s}">${s==='all'?'Tous':s}</button>
+        `).join('')}
+      </div>
+    </div>
+    <div class="pf-grid">
+      ${cards}
+      <div class="pf-card-add" data-action="addChantier">
+        ${svgIcon(ico.plus,24)}
+        <span style="font-size:13px;font-weight:500">Ajouter un chantier</span>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Home / Launchpad ─────────────────────────────────────────────────────────
+function renderHome(d,c){
+  function tile(screen,icon,name,kpi,sub,color){
+    return`<div class="tile" data-screen="${screen}">
+      <div class="tile-icon" style="background:${color}20">${svgIcon(icon,22,`style="color:${color}"`)}</div>
+      <div class="tile-name">${name}</div>
+      ${kpi!==null?`<div class="tile-kpi">${kpi}</div>`:''}
+      ${sub?`<div class="tile-sub">${sub}</div>`:''}
+    </div>`;
+  }
+  const s=summarize(d);
+  const hLine=c.hBudg>0?`${c.hConso||0}/${c.hBudg} h`:'';
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h1 class="page-title" style="margin:0">${esc(d.ident.nom||'Chantier')}</h1>
+      <span class="badge ${statusBadge(s.statut)}">${s.statut}</span>
+    </div>
+    <div class="tile-group-label">Pilotage</div>
+    <div class="tile-grid">
+      ${tile('dashboard',ico.dash,'Tableau de bord',s.alertCount>0?s.alertCount:null,s.alertCount>0?`${s.alertCount} alerte${s.alertCount>1?'s':''}`:null,'#e76500')}
+    </div>
+    <div class="tile-group-label">Finances</div>
+    <div class="tile-grid">
+      ${tile('finance',ico.fin,'Suivi financier / RAF',c.margeBrute!==0?pct(c.tauxMarge):null,'Marge brute','#0070f2')}
+      ${tile('st',ico.st,'Sous-traitants',c.stActifs||null,c.stActifs?`${c.stActifs} ST actifs`:null,'#5b738b')}
+      ${tile('fournisseurs',ico.fourn,'Fournisseurs',c.fournActifs||null,c.fournActifs?`${c.fournActifs} fournisseurs`:null,'#5b738b')}
+      ${tile('ts',ico.ts,'TS & Aléas',c.tsEnAttente||null,c.tsEnAttente?`${c.tsEnAttente} en attente`:null,'#e76500')}
+    </div>
+    <div class="tile-group-label">Exécution</div>
+    <div class="tile-grid">
+      ${tile('planning',ico.plan,'Planning',c.planAv>0?pct(c.planAv):null,'Avancement moyen','#107e3e')}
+      ${tile('heures',ico.heure,'Heures MO',hLine||null,hLine?`Tx ${c.txH}€/h`:null,'#107e3e')}
+    </div>
+    <div class="tile-group-label">Qualité & Clôture</div>
+    <div class="tile-grid">
+      ${tile('reserves',ico.res,'Réserves',c.resOuvertes||null,c.resOuvertes?`${c.resOuvertes} ouverte${c.resOuvertes>1?'s':''}`:null,'#d20a0a')}
+      ${tile('checklist',ico.check,'Check-list',`${c.clDDone+c.clRDone}/${d.checklistDemarrage.length+d.checklistReception.length}`,null,'#107e3e')}
+      ${tile('cr',ico.cr,'CR Chantier',c.crCount||null,c.crCount?`${c.crCount} CR`:null,'#5b738b')}
+    </div>
+  `;
+}
+// ─── Init ─────────────────────────────────────────────────────────────────────
+load();
+if(state.chantiers.length===0){
+  newChantier();
+  state.screen='portfolio';
+}else if(!state.activeId){
+  state.activeId=state.chantiers[0].id;
+  state.screen='portfolio';
+}
+render();
+</script>
+</body>
+</html>
