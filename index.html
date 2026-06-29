@@ -272,10 +272,10 @@ const svgIcon=(path,size=16,extra='')=>`<svg width="${size}" height="${size}" vi
 
 // Week helpers
 function getISOWeek(date){
-  const d=new Date(date);d.setHours(0,0,0,0);
+  const d=new Date(date);d.setHours(12,0,0,0);
   d.setDate(d.getDate()+4-(d.getDay()||7));
   const y=d.getFullYear();
-  const start=new Date(y,0,4);
+  const start=new Date(y,0,1,12);
   return[y,Math.ceil((((d-start)/86400000)+1)/7)];
 }
 function weekKey(date){const[y,w]=getISOWeek(date);return`${y}-W${String(w).padStart(2,'0')}`}
@@ -331,7 +331,7 @@ function defaults(){
     contract:{montantHT:'',montantTTC:'',tva:'20',delaiPaiement:'30',
               revision:'non',formule:'',delaiContractuel:''},
     finance:{marcheInitial:'',avenantsSignes:'',budgetCR:'',reelEngage:'',resteAEngager:'',fgChantier:''},
-    postes:row6(i=>({nom:'',budgetPrevu:'',reelEngage:'',resteAEng:'',avancement:'',txHoraire:'37.3',hBudg:'',hReel:''})),
+    postes:row6(i=>({nom:'',budgetPrevu:'',reelEngage:'',resteAEng:'',avancement:'',txHoraire:'37.3',hBudg:'',hReel:'',source:'manuel'})),
     situations:Array.from({length:8},(_,i)=>({
       num:i+1,periode:'Situation '+(i+1),dateEnvoi:'',montantHT:'',datePaiement:'',delai:'30',statut:'—',visa:''
     })),
@@ -387,6 +387,8 @@ function defaults(){
 const KEY='suivi_chantier_sap_portfolio_v1';
 const KEY_OLD='suivi_chantier_sap_v1';
 let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine'};
+function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
+function setHTab(val){state.hTab=val;render();}
 
 function load(){
   try{
@@ -1022,9 +1024,9 @@ function renderHeures(d,c){
         <button class="add-row-btn" data-action="addRow" data-list="compagnons">${svgIcon(ico.plus,13)} Ajouter compagnon</button>
       `:`
         <div class="week-nav">
-          <button data-action="prevWeek">${svgIcon('<polyline points="15 18 9 12 15 6"/>',16)}</button>
+          <button type="button" onclick="navWeek('prev')">${svgIcon('<polyline points="15 18 9 12 15 6"/>',16)}</button>
           <span class="week-label">Semaine ${weekNum} — ${fmtMon(mon)} au ${fmtMon(sun)}</span>
-          <button data-action="nextWeek">${svgIcon('<polyline points="9 18 15 12 9 6"/>',16)}</button>
+          <button type="button" onclick="navWeek('next')">${svgIcon('<polyline points="9 18 15 12 9 6"/>',16)}</button>
           <span style="font-size:12px;color:var(--sub)">Total : <strong>${weekTotal>0?weekTotal+'h':'—'}</strong></span>
         </div>
         ${d.compagnons.length===0?`<div style="padding:24px;text-align:center;color:var(--sub)">Ajoutez des compagnons dans l'onglet "Compagnons" d'abord.</div>`:`
@@ -1044,7 +1046,7 @@ function renderHeures(d,c){
             </tr></tfoot>
           </table>
         </div>`}
-        <button class="add-row-btn" style="margin-top:8px" data-action="hTab" data-val="compagnons">${svgIcon(ico.plus,13)} Gérer les compagnons</button>
+        <button class="add-row-btn" type="button" style="margin-top:8px" onclick="setHTab('compagnons')">${svgIcon(ico.plus,13)} Gérer les compagnons</button>
       `}
     </div>
   `;
@@ -1408,20 +1410,34 @@ function renderFinance(d,c){
   const retardsSit=c.situations.filter(s=>s.retard>0).length;
 
   // ── Budget vs Réel par poste ─────────────────────────────────────────────
+  const moReelAuto=Math.round(c.hConso*(c.txH||n(d.heures.txHoraire)));
   const posteRows=d.postes.map((p,i)=>{
+    const src=p.source||'manuel';
+    const isMO=src==='heures';
     const av=n(p.avancement);
     const bp=n(p.budgetPrevu);
-    const re=n(p.reelEngage);
+    const re=isMO?moReelAuto:n(p.reelEngage);
     const rae=n(p.resteAEng)||Math.max(0,bp-re);
     const eacP=re+rae;
     const ecart=bp-eacP;
-    return`<tr>
-      <td><input type="text" name="postes.${i}.nom" value="${esc(p.nom)}" style="width:150px" placeholder="Poste ${i+1}"></td>
+    return`<tr${isMO?' style="background:#f0f8ff"':''}>
+      <td>
+        <input type="text" name="postes.${i}.nom" value="${esc(p.nom)}" style="width:130px" placeholder="Poste ${i+1}">
+      </td>
+      <td>
+        <select name="postes.${i}.source" style="font-size:11px;color:${isMO?'var(--acc)':'var(--sub)'};border:1px solid var(--border);border-radius:4px;padding:2px 4px">
+          <option value="manuel"${src==='manuel'?' selected':''}>Manuel</option>
+          <option value="heures"${src==='heures'?' selected':''}>⟳ Heures MO</option>
+        </select>
+      </td>
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.budgetPrevu" value="${p.budgetPrevu||''}" style="width:90px"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.reelEngage" value="${p.reelEngage||''}" style="width:90px"></div></td>
+      <td>${isMO
+        ?`<div class="amt-cell" title="Calculé depuis Heures MO : ${c.hConso}h × ${c.txH||n(d.heures.txHoraire)}€/h"><span class="sym">€</span><span style="font-weight:600;color:var(--acc);padding:4px 6px">${moReelAuto>0?moReelAuto.toLocaleString('fr-FR'):'—'}</span>${svgIcon('<path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"/>',12,'style="color:var(--acc);opacity:.6"')}</div>`
+        :`<div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.reelEngage" value="${p.reelEngage||''}" style="width:90px"></div>`}
+      </td>
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.resteAEng" value="${p.resteAEng||''}" style="width:90px"></div></td>
       <td class="auto" style="font-weight:600;color:${ecart<0?'var(--neg)':ecart>0?'var(--pos)':'var(--sub)'}">${bp>0?eurRaw(ecart):'—'}</td>
-      <td style="min-width:130px">
+      <td style="min-width:120px">
         <div style="display:flex;align-items:center;gap:6px">
           <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(av,100)}%;background:${av>=100?'var(--pos)':re>bp?'var(--neg)':'var(--acc)'}"></div></div>
           <input type="number" name="postes.${i}.avancement" value="${p.avancement||''}" style="width:42px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
@@ -1432,8 +1448,8 @@ function renderFinance(d,c){
   }).join('');
 
   const posteTotBP=d.postes.reduce((s,p)=>s+n(p.budgetPrevu),0);
-  const posteTotRE=d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
-  const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-n(p.reelEngage)),0);
+  const posteTotRE=d.postes.reduce((s,p)=>s+(p.source==='heures'?moReelAuto:n(p.reelEngage)),0);
+  const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-(p.source==='heures'?moReelAuto:n(p.reelEngage))),0);
 
   // ── Situations ──────────────────────────────────────────────────────────────
   const sitRows=c.situations.map((sit,i)=>{
@@ -1599,13 +1615,19 @@ function renderFinance(d,c){
 
     <!-- Budget vs Réel par poste -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Budget vs Réel par poste analytique</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Budget vs Réel par poste analytique</div>
+        ${c.hConso>0?`<div style="font-size:12px;background:#e8f4fd;border:1px solid #b3d9f5;border-radius:6px;padding:6px 12px;color:#0056b3">
+          Heures MO : <strong>${c.hConso}h</strong> × <strong>${c.txH||n(d.heures.txHoraire)}€/h</strong> = <strong>${moReelAuto.toLocaleString('fr-FR')} €</strong>
+          &nbsp;·&nbsp; Assignez "⟳ Heures MO" à un poste pour lier automatiquement
+        </div>`:''}
+      </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Poste</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
+          <thead><tr><th>Poste</th><th>Source</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
           <tbody>${posteRows}</tbody>
           <tfoot><tr style="background:#f0f2f5;font-weight:700">
-            <td>Total</td>
+            <td colspan="2">Total</td>
             <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
             <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
             <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
