@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -359,13 +358,23 @@ function defaults(){
       num:'TS-0'+(i+1),date:'',nature:'',demandeur:'',mtEstime:'',mtAccorde:'',
       statut:'En attente',impactPlanning:'',impactBudget:'',numAvenant:'',detail:''
     })),
-    cr:{date:'',type:'Réunion de chantier',presents:'',redacteur:'',diffusion:'',numCR:'',
+    cr:{date:'',type:'Réunion de chantier',heure:'',presents:'',redacteur:'',diffusion:'',numCR:'',
         avancement:'',phase:'',retards:'',causes:'',actions:'',meteo:'',
         sitEmise:'',encaissement:'',avenantsCours:'',tsValides:'',litiges:'',
         incidents:'',qualite:'',nc:'',environnement:'',effectif:'',stPresents:'',
-        pointsST:'',agrements:'',livraisons:'',d1:'',d2:'',d3:'',prochaine:''},
+        pointsST:'',agrements:'',livraisons:'',d1:'',d2:'',d3:'',prochaine:'',
+        commanditaire:'',ordreJour:'',securite:'',ppsps:'',vic:'',remarquesTCE:'',penalites:''},
     crHistorique:Array.from({length:6},(_,i)=>({
       num:'CR-0'+(i+1),date:'',type:'',redacteur:'',presents:'',avancement:'',pointsLeves:'',pointsOuverts:''
+    })),
+    crPresents:Array.from({length:6},(_,i)=>({
+      nom:'',societe:'',role:i===0?'OPC':'Lot',lot:'',statut:'P'
+    })),
+    crLots:Array.from({length:4},(_,i)=>({
+      lot:'',tache:'',urgence:'normale',dateDebut:'',dateFin:'',avancement:'',rappels:'0',observations:''
+    })),
+    crActions:Array.from({length:4},(_,i)=>({
+      num:i+1,description:'',responsable:'',echeance:'',statut:'Ouvert',rappels:'0'
     })),
     compagnons:[],
     heuresHebdo:{},
@@ -1198,6 +1207,65 @@ function renderTS(d,c){
 // CR Chantier
 function renderCR(d,c){
   const cr=d.cr;
+
+  function field(path,label,type='text',opts=null,span=1){
+    const val=getVal(d,path);
+    const s=span>1?`style="grid-column:span ${span}"`:'';
+    if(type==='textarea')return`<div class="form-field" ${s||'style="grid-column:span 2"'}><label class="form-label">${label}</label><textarea class="form-textarea" name="${path}" rows="3">${esc(val)}</textarea></div>`;
+    if(type==='select')return`<div class="form-field" ${s}><label class="form-label">${label}</label><select class="form-select" name="${path}">${opts.map(v=>`<option${val===v?' selected':''}>${v}</option>`).join('')}</select></div>`;
+    return`<div class="form-field" ${s}><label class="form-label">${label}</label><input type="${type}" class="form-input" name="${path}" value="${esc(val)}"></div>`;
+  }
+
+  const urgColor={haute:'#d20a0a',normale:'#e76500',basse:'#107e3e'};
+  const actColor={Ouvert:'#d20a0a','En cours':'#e76500',Levé:'#107e3e'};
+  const statColor={P:'#107e3e',A:'#d20a0a',NR:'#89919a'};
+
+  const presRows=(d.crPresents||[]).map((p,i)=>`<tr>
+    <td><input type="text" name="crPresents.${i}.nom" value="${esc(p.nom)}" style="width:110px"></td>
+    <td><input type="text" name="crPresents.${i}.societe" value="${esc(p.societe)}" style="width:110px"></td>
+    <td><select name="crPresents.${i}.role" class="form-select" style="width:65px">
+      <option${p.role==='OPC'?' selected':''}>OPC</option>
+      <option${p.role==='Lot'?' selected':''}>Lot</option>
+    </select></td>
+    <td><input type="text" name="crPresents.${i}.lot" value="${esc(p.lot)}" style="width:65px"></td>
+    <td><select name="crPresents.${i}.statut" class="form-select" style="width:55px;color:${statColor[p.statut||'P']}">
+      <option${p.statut==='P'?' selected':''} style="color:#107e3e">P</option>
+      <option${p.statut==='A'?' selected':''} style="color:#d20a0a">A</option>
+      <option${p.statut==='NR'?' selected':''} style="color:#89919a">NR</option>
+    </select></td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="crPresents" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+
+  const lotsRows=(d.crLots||[]).map((l,i)=>`<tr>
+    <td><input type="text" name="crLots.${i}.lot" value="${esc(l.lot)}" style="width:65px"></td>
+    <td style="min-width:180px"><input type="text" name="crLots.${i}.tache" value="${esc(l.tache)}" style="width:100%"></td>
+    <td><select name="crLots.${i}.urgence" class="form-select" style="width:90px;color:${urgColor[l.urgence||'normale']}">
+      <option value="basse"${l.urgence==='basse'?' selected':''} style="color:#107e3e">🟢 Basse</option>
+      <option value="normale"${(!l.urgence||l.urgence==='normale')?' selected':''} style="color:#e76500">🟡 Normale</option>
+      <option value="haute"${l.urgence==='haute'?' selected':''} style="color:#d20a0a">🔴 Haute</option>
+    </select></td>
+    <td><input type="date" name="crLots.${i}.dateDebut" value="${l.dateDebut||''}"></td>
+    <td><input type="date" name="crLots.${i}.dateFin" value="${l.dateFin||''}"></td>
+    <td><input type="number" name="crLots.${i}.avancement" value="${l.avancement||''}" style="width:50px"> %</td>
+    <td><input type="number" name="crLots.${i}.rappels" value="${l.rappels||'0'}" style="width:40px"></td>
+    <td style="min-width:150px"><input type="text" name="crLots.${i}.observations" value="${esc(l.observations)}" style="width:100%"></td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="crLots" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+
+  const actRows=(d.crActions||[]).map((a,i)=>`<tr>
+    <td style="text-align:center;font-weight:700;color:var(--sub)">${a.num}</td>
+    <td style="min-width:200px"><input type="text" name="crActions.${i}.description" value="${esc(a.description)}" style="width:100%"></td>
+    <td><input type="text" name="crActions.${i}.responsable" value="${esc(a.responsable)}" style="width:100px"></td>
+    <td><input type="date" name="crActions.${i}.echeance" value="${a.echeance||''}"></td>
+    <td><select name="crActions.${i}.statut" class="form-select" style="width:85px;color:${actColor[a.statut]||'inherit'}">
+      <option${a.statut==='Ouvert'?' selected':''} style="color:#d20a0a">Ouvert</option>
+      <option${a.statut==='En cours'?' selected':''} style="color:#e76500">En cours</option>
+      <option${a.statut==='Levé'?' selected':''} style="color:#107e3e">Levé</option>
+    </select></td>
+    <td><input type="number" name="crActions.${i}.rappels" value="${a.rappels||'0'}" style="width:40px"></td>
+    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="crActions" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
+  </tr>`).join('');
+
   const histRows=d.crHistorique.map((h,i)=>`<tr>
     <td><input type="text" name="crHistorique.${i}.num" value="${esc(h.num)}" style="width:70px"></td>
     <td><input type="date" name="crHistorique.${i}.date" value="${h.date||''}"></td>
@@ -1209,81 +1277,99 @@ function renderCR(d,c){
     <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="crHistorique" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
   </tr>`).join('');
 
-  function field(path,label,type='text',opts=null){
-    const val=getVal(d,path);
-    if(type==='textarea')return`<div class="form-field" style="grid-column:span 2"><label class="form-label">${label}</label><textarea class="form-textarea" name="${path}" rows="3">${esc(val)}</textarea></div>`;
-    if(type==='select')return`<div class="form-field"><label class="form-label">${label}</label><select class="form-select" name="${path}">${opts.map(v=>`<option${val===v?' selected':''}>${v}</option>`).join('')}</select></div>`;
-    return`<div class="form-field"><label class="form-label">${label}</label><input type="${type}" class="form-input" name="${path}" value="${esc(val)}"></div>`;
-  }
-
   return`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <h1 class="page-title" style="margin:0">CR Chantier</h1>
       <button class="btn btn-primary" data-action="exportCR">${svgIcon(ico.pdf,14)} Exporter PDF</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-      <div class="card">
-        <div class="card-title">Identification</div>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr">
-          ${field('cr.numCR','N° CR')}
-          ${field('cr.date','Date','date')}
-          ${field('cr.type','Type','select',['Réunion de chantier','Réunion de coordination','Réunion de direction'])}
-          ${field('cr.redacteur','Rédacteur')}
-          ${field('cr.presents','Présents','text')}
-          ${field('cr.diffusion','Diffusion','text')}
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Avancement</div>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr">
-          ${field('cr.avancement','Avancement global (%)','number')}
-          ${field('cr.phase','Phase')}
-          ${field('cr.meteo','Météo')}
-          ${field('cr.retards','Retards constatés','textarea')}
-          ${field('cr.actions','Actions décidées','textarea')}
-        </div>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-      <div class="card">
-        <div class="card-title">Finances</div>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr">
-          ${field('cr.sitEmise','Situation émise')}
-          ${field('cr.encaissement','Encaissement')}
-          ${field('cr.avenantsCours','Avenants en cours')}
-          ${field('cr.tsValides','TS validés')}
-          ${field('cr.litiges','Litiges','textarea')}
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Sécurité / Qualité</div>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr">
-          ${field('cr.incidents','Incidents sécurité')}
-          ${field('cr.effectif','Effectif présent')}
-          ${field('cr.qualite','Points qualité')}
-          ${field('cr.nc','Non-conformités')}
-          ${field('cr.environnement','Environnement')}
-        </div>
-      </div>
-    </div>
+
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Sous-traitants</div>
-      <div class="form-grid">
-        ${field('cr.stPresents','ST présents')}
-        ${field('cr.pointsST','Points ST','textarea')}
-        ${field('cr.agrements','Agréments en attente')}
-        ${field('cr.livraisons','Livraisons prévues')}
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Points à lever</div>
-      <div class="form-grid">
-        ${field('cr.d1','Point 1','textarea')}
-        ${field('cr.d2','Point 2','textarea')}
-        ${field('cr.d3','Point 3','textarea')}
+      <div class="card-title">Identification</div>
+      <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
+        ${field('cr.numCR','N° CR')}
+        ${field('cr.date','Date','date')}
+        ${field('cr.heure','Heure','time')}
+        ${field('cr.type','Type','select',['Réunion de chantier','Réunion de coordination','Réunion de direction','Visite de chantier'])}
+        ${field('cr.commanditaire','Commanditaire / MO','text',null,2)}
+        ${field('cr.redacteur','Rédacteur')}
+        ${field('cr.diffusion','Diffusion')}
         ${field('cr.prochaine','Prochaine réunion','date')}
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Ordre du jour</div>
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-field"><label class="form-label">Points à aborder</label><textarea class="form-textarea" name="cr.ordreJour" rows="4">${esc(cr.ordreJour||'')}</textarea></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Présences</div>
+      <div style="font-size:11px;color:var(--sub);margin-bottom:8px">P = Présent &nbsp;·&nbsp; A = Absent &nbsp;·&nbsp; NR = Non requis</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Nom</th><th>Société</th><th>Rôle</th><th>Lot</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${presRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="crPresents">${svgIcon(ico.plus,13)} Ajouter participant</button>
+      <div class="form-grid" style="grid-template-columns:1fr;margin-top:12px">
+        <div class="form-field"><label class="form-label">Note pénalités / obligations de présence</label><textarea class="form-textarea" name="cr.penalites" rows="2">${esc(cr.penalites||'')}</textarea></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Général</div>
+      <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+        ${field('cr.meteo','Météo / Conditions')}
+        ${field('cr.avancement','Avancement global (%)','number')}
+        ${field('cr.phase','Phase')}
+        ${field('cr.effectif','Effectif présent')}
+        ${field('cr.ppsps','PPSPS')}
+        ${field('cr.vic','VIC (Visite Inspection Commune)')}
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-top:8px">
+        ${field('cr.securite','Sécurité / Incidents','textarea')}
+        ${field('cr.remarquesTCE','Remarques TCE / Avancement général','textarea')}
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Coordination par lot</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Lot</th><th>Tâche</th><th>Urgence</th><th>Début</th><th>Fin prévue</th><th>Avanct.</th><th>Rappels</th><th>Observations</th><th></th></tr></thead>
+          <tbody>${lotsRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="crLots">${svgIcon(ico.plus,13)} Ajouter lot</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Points ouverts / Actions</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Description</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th>Rappels</th><th></th></tr></thead>
+          <tbody>${actRows}</tbody>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="crActions">${svgIcon(ico.plus,13)} Ajouter action</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Finances</div>
+      <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
+        ${field('cr.sitEmise','Situation émise')}
+        ${field('cr.encaissement','Encaissement')}
+        ${field('cr.avenantsCours','Avenants en cours')}
+        ${field('cr.tsValides','TS validés')}
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr;margin-top:8px">
+        ${field('cr.litiges','Litiges / Contentieux','textarea')}
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">Historique CR (${c.crCount})</div>
       <div class="tbl-wrap">
@@ -1303,39 +1389,61 @@ function exportCRPdf(){
   const d=ch.d;const cr=d.cr;
   const win=window.open('','_blank');
   if(!win)return alert('Autoriser les popups pour l\'export PDF.');
+  const pres=(d.crPresents||[]).filter(p=>p.nom||p.societe);
+  const lots=(d.crLots||[]).filter(l=>l.lot||l.tache);
+  const acts=(d.crActions||[]).filter(a=>a.description);
+  const urgLabel={haute:'🔴 Haute',normale:'🟡 Normale',basse:'🟢 Basse'};
   win.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
   <title>CR Chantier — ${esc(d.ident.nom||'')}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:11pt;color:#222;padding:20mm}
-    h1{font-size:16pt;color:#354a5f;margin-bottom:8pt}
-    h2{font-size:12pt;color:#354a5f;border-bottom:1px solid #cdd8e2;padding-bottom:4pt;margin:12pt 0 6pt}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8pt;margin-bottom:8pt}
-    .field{margin-bottom:5pt}
-    .label{font-size:8pt;font-weight:700;color:#6a7a8a;text-transform:uppercase;letter-spacing:.4px}
-    .value{font-size:10pt;border-bottom:1px solid #e5e8ec;padding-bottom:2pt;min-height:16pt}
-    @media print{body{padding:10mm} @page{margin:10mm}}
+    body{font-family:Arial,sans-serif;font-size:10.5pt;color:#222;padding:15mm}
+    h1{font-size:15pt;color:#354a5f;margin-bottom:10pt}
+    h2{font-size:11pt;color:#354a5f;background:#f0f4f8;padding:4pt 8pt;margin:14pt 0 6pt;border-left:3px solid #354a5f}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:6pt;margin-bottom:6pt}
+    .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6pt;margin-bottom:6pt}
+    .field{margin-bottom:4pt}
+    .label{font-size:7.5pt;font-weight:700;color:#6a7a8a;text-transform:uppercase;letter-spacing:.4px}
+    .value{font-size:10pt;border-bottom:1px solid #e5e8ec;padding-bottom:2pt;min-height:14pt}
+    .block{border-bottom:1px solid #e5e8ec;padding-bottom:3pt;min-height:30pt;margin-bottom:6pt}
+    table{width:100%;border-collapse:collapse;margin-bottom:6pt;font-size:9pt}
+    th{background:#354a5f;color:#fff;padding:4pt 6pt;text-align:left;font-size:8pt}
+    td{padding:3pt 6pt;border-bottom:1px solid #e5e8ec}
+    tr:nth-child(even) td{background:#f8f9fa}
+    .badge-p{color:#107e3e;font-weight:700} .badge-a{color:#d20a0a;font-weight:700} .badge-nr{color:#89919a}
+    @media print{body{padding:10mm} @page{margin:10mm size:A4}}
   </style></head><body>
   <h1>CR Chantier — ${esc(d.ident.nom||'')} (${esc(cr.numCR||'')})</h1>
-  <div class="grid">
-    ${[['Date',cr.date],['Type',cr.type],['Rédacteur',cr.redacteur],['Présents',cr.presents],['Avancement',cr.avancement?cr.avancement+'%':''],['Météo',cr.meteo]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  <div class="grid4">
+    ${[['Date',cr.date],['Heure',cr.heure],['Type',cr.type],['Prochaine réunion',cr.prochaine]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
   </div>
-  <h2>Avancement & Actions</h2>
-  <div class="field"><div class="label">Retards constatés</div><div class="value" style="min-height:40pt">${esc(cr.retards||'')}</div></div>
-  <div class="field" style="margin-top:6pt"><div class="label">Actions décidées</div><div class="value" style="min-height:40pt">${esc(cr.actions||'')}</div></div>
-  <h2>Finances</h2>
   <div class="grid">
+    ${[['Commanditaire / MO',cr.commanditaire],['Rédacteur',cr.redacteur],['Diffusion',cr.diffusion]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  </div>
+  ${cr.ordreJour?`<h2>Ordre du jour</h2><div class="block" style="white-space:pre-wrap">${esc(cr.ordreJour)}</div>`:''}
+  ${pres.length?`<h2>Présences</h2>
+  <table><thead><tr><th>Nom</th><th>Société</th><th>Rôle</th><th>Lot</th><th>Statut</th></tr></thead><tbody>
+  ${pres.map(p=>{const cls=p.statut==='P'?'badge-p':p.statut==='A'?'badge-a':'badge-nr';return`<tr><td>${esc(p.nom)}</td><td>${esc(p.societe)}</td><td>${esc(p.role)}</td><td>${esc(p.lot)}</td><td class="${cls}">${esc(p.statut)}</td></tr>`;}).join('')}
+  </tbody></table>${cr.penalites?`<div class="field"><div class="label">Note pénalités</div><div class="block">${esc(cr.penalites)}</div></div>`:''}`:'' }
+  <h2>Général</h2>
+  <div class="grid">
+    ${[['Météo',cr.meteo],['Avancement global',cr.avancement?cr.avancement+'%':''],['Phase',cr.phase],['Effectif',cr.effectif],['PPSPS',cr.ppsps],['VIC',cr.vic]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
+  </div>
+  ${cr.securite?`<div class="field"><div class="label">Sécurité / Incidents</div><div class="block">${esc(cr.securite)}</div></div>`:''}
+  ${cr.remarquesTCE?`<div class="field"><div class="label">Remarques TCE</div><div class="block">${esc(cr.remarquesTCE)}</div></div>`:''}
+  ${lots.length?`<h2>Coordination par lot</h2>
+  <table><thead><tr><th>Lot</th><th>Tâche</th><th>Urgence</th><th>Début</th><th>Fin prévue</th><th>Avanct.</th><th>Rappels</th><th>Observations</th></tr></thead><tbody>
+  ${lots.map(l=>`<tr><td>${esc(l.lot)}</td><td>${esc(l.tache)}</td><td>${urgLabel[l.urgence]||l.urgence}</td><td>${l.dateDebut||''}</td><td>${l.dateFin||''}</td><td>${l.avancement?l.avancement+'%':''}</td><td>${l.rappels||0}</td><td>${esc(l.observations)}</td></tr>`).join('')}
+  </tbody></table>`:''}
+  ${acts.length?`<h2>Points ouverts / Actions</h2>
+  <table><thead><tr><th>N°</th><th>Description</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th>Rappels</th></tr></thead><tbody>
+  ${acts.map(a=>`<tr><td style="text-align:center">${a.num}</td><td>${esc(a.description)}</td><td>${esc(a.responsable)}</td><td>${a.echeance||''}</td><td>${esc(a.statut)}</td><td style="text-align:center">${a.rappels||0}</td></tr>`).join('')}
+  </tbody></table>`:''}
+  ${cr.sitEmise||cr.encaissement||cr.avenantsCours||cr.tsValides||cr.litiges?`<h2>Finances</h2>
+  <div class="grid4">
     ${[['Situation émise',cr.sitEmise],['Encaissement',cr.encaissement],['Avenants en cours',cr.avenantsCours],['TS validés',cr.tsValides]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
   </div>
-  <h2>Sécurité / Qualité</h2>
-  <div class="grid">
-    ${[['Incidents',cr.incidents],['Effectif',cr.effectif],['Qualité',cr.qualite],['Non-conformités',cr.nc]].map(([l,v])=>`<div class="field"><div class="label">${l}</div><div class="value">${esc(v||'')}</div></div>`).join('')}
-  </div>
-  ${cr.d1||cr.d2||cr.d3?`<h2>Points à lever</h2>
-  <div class="field"><div class="label">Point 1</div><div class="value">${esc(cr.d1||'')}</div></div>
-  <div class="field" style="margin-top:4pt"><div class="label">Point 2</div><div class="value">${esc(cr.d2||'')}</div></div>
-  <div class="field" style="margin-top:4pt"><div class="label">Point 3</div><div class="value">${esc(cr.d3||'')}</div></div>`:''}
-  ${cr.prochaine?`<h2>Prochaine réunion</h2><div class="value">${esc(cr.prochaine)}</div>`:''}
+  ${cr.litiges?`<div class="field"><div class="label">Litiges</div><div class="block">${esc(cr.litiges)}</div></div>`:''}`:''}
   </body></html>`);
   win.document.close();
   setTimeout(()=>win.print(),350);
