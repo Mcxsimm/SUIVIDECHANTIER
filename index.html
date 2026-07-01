@@ -332,6 +332,17 @@ function defaults(){
               revision:'non',formule:'',delaiContractuel:''},
     finance:{marcheInitial:'',avenantsSignes:'',budgetCR:'',reelEngage:'',resteAEngager:'',fgChantier:''},
     postes:row6(i=>({nom:'',budgetPrevu:'',reelEngage:'',resteAEng:'',avancement:'',txHoraire:'37.3',hBudg:'',hReel:'',source:'manuel'})),
+    // Budget par poste analytique (catégories fixes) — réel alimenté auto pour
+    // mo/st/fournitures/matériel ; réel manuel pour études & autres
+    budgetPostes:{
+      mo:{budget:'',avancement:''},
+      stMoyen:{budget:'',avancement:''},
+      stComp:{budget:'',avancement:''},
+      fournitures:{budget:'',avancement:''},
+      materiel:{budget:'',avancement:''},
+      etudes:{budget:'',reel:'',avancement:''},
+      autres:{budget:'',reel:'',avancement:''}
+    },
     situations:Array.from({length:8},(_,i)=>({
       num:i+1,periode:'Situation '+(i+1),dateEnvoi:'',montantHT:'',datePaiement:'',delai:'30',statut:'—',visa:''
     })),
@@ -568,7 +579,15 @@ function summarize(d){
   const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
   const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
   const marcheActualise=marcheInitial+avenantsSignes;
-  const reelEngage=n(d.finance.reelEngage)||d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
+  // Réel engagé estimé depuis les rubriques (MO + ST + Fournisseurs + postes manuels)
+  let hAll=0;
+  Object.values(d.heuresHebdo||{}).forEach(wd=>Object.values(wd).forEach(days=>{hAll+=Object.values(days).reduce((s,v)=>s+n(v),0)}));
+  const moAll=Math.round(hAll*(n(d.heures.txHoraire)||37.3));
+  const stAll=d.st.reduce((s,x)=>s+n(x.montantHT),0);
+  const fAll=d.fournisseurs.reduce((s,x)=>s+n(x.montant),0);
+  const bp=d.budgetPostes||{};
+  const manAll=n(bp.etudes&&bp.etudes.reel)+n(bp.autres&&bp.autres.reel);
+  const reelEngage=n(d.finance.reelEngage)||(moAll+stAll+fAll+manAll);
   const budgetCR=n(d.finance.budgetCR)||marcheInitial;
   const marge=budgetCR-reelEngage;
   const taux=budgetCR>0?marge/budgetCR*100:0;
@@ -615,35 +634,7 @@ function summarize(d){
 }
 
 function computeAll(d){
-  // Finance
-  const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
-  const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
-  const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
-  const marcheActualise=marcheInitial+avenantsSignes;
-  const budgetCR=n(d.finance.budgetCR)||marcheInitial;
-  const reelEngage=n(d.finance.reelEngage)||d.postes.reduce((s,p)=>s+n(p.reelEngage),0);
-  const resteAEngager=n(d.finance.resteAEngager);
-  const eac=reelEngage+(resteAEngager>0?resteAEngager:0);
-  const margeBrute=budgetCR-reelEngage;
-  const tauxMarge=budgetCR>0?margeBrute/budgetCR*100:0;
-
-  // Situations
-  const totalFacture=d.situations.reduce((s,sit)=>s+n(sit.montantHT),0);
-  let totalEncaisse=0;
   const today=new Date();
-  const situations=d.situations.map((sit,i)=>{
-    const prev=d.situations.slice(0,i).reduce((s,x)=>s+n(x.montantHT),0);
-    const cumul=prev+n(sit.montantHT);
-    let retard=0;
-    if(sit.dateEnvoi&&!sit.datePaiement&&sit.statut!=='Payé'){
-      const sent=new Date(sit.dateEnvoi);
-      const delai=n(sit.delai)||30;
-      const due=new Date(sent.getTime()+delai*86400000);
-      if(today>due)retard=Math.floor((today-due)/86400000);
-    }
-    if(sit.datePaiement)totalEncaisse+=n(sit.montantHT);
-    return{...sit,cumul,retard};
-  });
 
   // Heures — total from weekly grid (heuresHebdo) + manual override
   const txH=n(d.heures.txHoraire)||37.3;
@@ -685,6 +676,61 @@ function computeAll(d){
   const fReelM=cat=>d.fournisseurs.filter(f=>f.categorie===cat).reduce((s,x)=>s+n(x.mtFacture),0);
   const fTotal=d.fournisseurs.reduce((s,x)=>s+n(x.montant),0);
   const fournActifs=d.fournisseurs.filter(f=>f.fournisseur).length;
+
+  // ── Postes analytiques : catégories FIXES, réel engagé alimenté
+  //    automatiquement par les rubriques Heures / ST / Fournisseurs.
+  //    Plus de numéros de poste ni de source manuelle : le lien est structurel.
+  const budgetPostes=d.budgetPostes||{};
+  const moReelAuto=Math.round(hConso*txH);
+  const posteCats=[
+    {id:'mo',       label:"Main d'œuvre",     src:'Heures MO',      auto:true, reelAuto:moReelAuto, detail:`${hConso||0} h × ${txH} €/h`},
+    {id:'stMoyen',  label:'ST Moyen',          src:'Sous-traitants', auto:true, reelAuto:stEng('ST Moyen')},
+    {id:'stComp',   label:'ST Compétence',     src:'Sous-traitants', auto:true, reelAuto:stEng('ST Compétence')},
+    {id:'fournitures',label:'Fournitures',     src:'Fournisseurs',   auto:true, reelAuto:fEng('Fournitures')},
+    {id:'materiel', label:'Matériel',          src:'Fournisseurs',   auto:true, reelAuto:fEng('Matériel')},
+    {id:'etudes',   label:'Études techniques', src:'Saisie manuelle',auto:false},
+    {id:'autres',   label:'Autres dépenses',   src:'Saisie manuelle',auto:false},
+  ].map(p=>{
+    const b=budgetPostes[p.id]||{};
+    const reel=p.auto?p.reelAuto:n(b.reel);
+    const budget=n(b.budget);
+    const ecart=budget-reel;
+    const avManual=b.avancement!==undefined&&b.avancement!=='';
+    const av=avManual?n(b.avancement):(budget>0?Math.min(reel/budget*100,100):0);
+    return{...p,reel,budget,ecart,av,avManual};
+  });
+  const posteBudgetTot=posteCats.reduce((s,p)=>s+p.budget,0);
+  const posteReelTot=posteCats.reduce((s,p)=>s+p.reel,0);
+  const posteEcartTot=posteBudgetTot-posteReelTot;
+
+  // Finance — le réel engagé global est piloté par les postes analytiques
+  const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
+  const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
+  const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
+  const marcheActualise=marcheInitial+avenantsSignes;
+  const budgetCR=n(d.finance.budgetCR)||posteBudgetTot||marcheInitial;
+  const reelEngage=n(d.finance.reelEngage)||posteReelTot;
+  const resteAEngager=n(d.finance.resteAEngager);
+  const eac=reelEngage+(resteAEngager>0?resteAEngager:0);
+  const margeBrute=budgetCR-reelEngage;
+  const tauxMarge=budgetCR>0?margeBrute/budgetCR*100:0;
+
+  // Situations
+  const totalFacture=d.situations.reduce((s,sit)=>s+n(sit.montantHT),0);
+  let totalEncaisse=0;
+  const situations=d.situations.map((sit,i)=>{
+    const prev=d.situations.slice(0,i).reduce((s,x)=>s+n(x.montantHT),0);
+    const cumul=prev+n(sit.montantHT);
+    let retard=0;
+    if(sit.dateEnvoi&&!sit.datePaiement&&sit.statut!=='Payé'){
+      const sent=new Date(sit.dateEnvoi);
+      const delai=n(sit.delai)||30;
+      const due=new Date(sent.getTime()+delai*86400000);
+      if(today>due)retard=Math.floor((today-due)/86400000);
+    }
+    if(sit.datePaiement)totalEncaisse+=n(sit.montantHT);
+    return{...sit,cumul,retard};
+  });
 
   // RAF
   const moConsoH=hConso;
@@ -757,6 +803,7 @@ function computeAll(d){
     hBudg,hConso,txH,hPct,hSolde,hSeuil,hColor,catMap,
     stTotal,stSitTotal,stActifs,stDC4,
     fTotal,fournActifs,
+    posteCats,posteBudgetTot,posteReelTot,posteEcartTot,moReelAuto,
     rafDefs,rafMonths,rafCnt,
     resTotal,resOuvertes,resLevees,
     clDDone,clRDone,
@@ -1514,81 +1561,61 @@ function renderDashboard(d,c){
   `;
 }
 
-// ── Budget vs Réel par poste analytique — carte partagée Finances ⇄ Heures ──
-// Les deux rubriques s'alimentent des mêmes données (d.postes) : toute saisie
-// dans l'une est répercutée dans l'autre, et le poste « ⟳ Heures MO » se
-// calcule automatiquement depuis les heures consommées.
+// ── Budget vs Réel par poste analytique ───────────────────────────────────────
+// Catégories FIXES (plus de numéros de poste). Le « Réel engagé » des postes
+// automatiques (MO, ST, Fournitures, Matériel) est alimenté directement par les
+// rubriques Heures / Sous-traitants / Fournisseurs. Cette même carte est affichée
+// dans Finances ET dans Heures : le lien entre les deux est donc structurel.
 function posteAnalytiqueCard(d,c){
-  const moReelAuto=Math.round(c.hConso*(c.txH||n(d.heures.txHoraire)));
-  const posteRows=d.postes.map((p,i)=>{
-    const src=p.source||'manuel';
-    const isMO=src==='heures';
-    const av=n(p.avancement);
-    const bp=n(p.budgetPrevu);
-    const re=isMO?moReelAuto:n(p.reelEngage);
-    const rae=n(p.resteAEng)||Math.max(0,bp-re);
-    const eacP=re+rae;
-    const ecart=bp-eacP;
-    return`<tr${isMO?' style="background:#f0f8ff"':''}>
-      <td>
-        <input type="text" name="postes.${i}.nom" value="${esc(p.nom)}" style="width:130px" placeholder="Poste ${i+1}">
+  const iconAuto=svgIcon('<path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',12,'style="color:var(--acc);opacity:.6"');
+  const get=(id,f)=>((d.budgetPostes||{})[id]||{})[f]||'';
+  const rows=c.posteCats.map(p=>{
+    const overBudget=p.budget>0&&p.reel>p.budget;
+    return`<tr${p.auto?' style="background:#f7fbff"':''}>
+      <td style="font-weight:500;white-space:nowrap">${esc(p.label)}</td>
+      <td style="white-space:nowrap">
+        ${p.auto
+          ?`<span class="badge badge-blue" style="font-size:10px">⟳ ${esc(p.src)}</span>${p.detail?`<div style="color:var(--sub);font-size:10px;margin-top:2px">${esc(p.detail)}</div>`:''}`
+          :`<span class="badge badge-grey" style="font-size:10px">${esc(p.src)}</span>`}
       </td>
-      <td>
-        <select name="postes.${i}.source" style="font-size:11px;color:${isMO?'var(--acc)':'var(--sub)'};border:1px solid var(--border);border-radius:4px;padding:2px 4px">
-          <option value="manuel"${src==='manuel'?' selected':''}>Manuel</option>
-          <option value="heures"${src==='heures'?' selected':''}>⟳ Heures MO</option>
-        </select>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="budgetPostes.${p.id}.budget" value="${esc(get(p.id,'budget'))}" style="width:95px" placeholder="0"></div></td>
+      <td>${p.auto
+        ?`<div class="amt-cell" title="Alimenté automatiquement depuis ${esc(p.src)}"><span class="sym">€</span><span style="font-weight:600;color:var(--acc);padding:4px 6px">${p.reel>0?p.reel.toLocaleString('fr-FR'):'—'}</span>${iconAuto}</div>`
+        :`<div class="amt-cell"><span class="sym">€</span><input type="number" name="budgetPostes.${p.id}.reel" value="${esc(get(p.id,'reel'))}" style="width:95px" placeholder="0"></div>`}
       </td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.budgetPrevu" value="${p.budgetPrevu||''}" style="width:90px"></div></td>
-      <td>${isMO
-        ?`<div class="amt-cell" title="Calculé depuis Heures MO : ${c.hConso}h × ${c.txH||n(d.heures.txHoraire)}€/h"><span class="sym">€</span><span style="font-weight:600;color:var(--acc);padding:4px 6px">${moReelAuto>0?moReelAuto.toLocaleString('fr-FR'):'—'}</span>${svgIcon('<path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48 2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48 2.83-2.83"/>',12,'style="color:var(--acc);opacity:.6"')}</div>`
-        :`<div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.reelEngage" value="${p.reelEngage||''}" style="width:90px"></div>`}
-      </td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="postes.${i}.resteAEng" value="${p.resteAEng||''}" style="width:90px"></div></td>
-      <td class="auto" style="font-weight:600;color:${ecart<0?'var(--neg)':ecart>0?'var(--pos)':'var(--sub)'}">${bp>0?eurRaw(ecart):'—'}</td>
-      <td style="min-width:120px">
+      <td class="auto" style="font-weight:600;color:${p.ecart<0?'var(--neg)':p.ecart>0?'var(--pos)':'var(--sub)'}">${(p.budget>0||p.reel>0)?eurRaw(p.ecart):'—'}</td>
+      <td style="min-width:135px">
         <div style="display:flex;align-items:center;gap:6px">
-          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(av,100)}%;background:${av>=100?'var(--pos)':re>bp?'var(--neg)':'var(--acc)'}"></div></div>
-          <input type="number" name="postes.${i}.avancement" value="${p.avancement||''}" style="width:42px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(p.av,100)}%;background:${p.av>=100?'var(--pos)':overBudget?'var(--neg)':'var(--acc)'}"></div></div>
+          <input type="number" name="budgetPostes.${p.id}.avancement" value="${esc(get(p.id,'avancement'))}" placeholder="${p.av.toFixed(0)}" title="Vide = calculé (réel/budget). Saisir pour forcer l'avancement physique." style="width:44px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
         </div>
       </td>
-      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="postes" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
     </tr>`;
   }).join('');
-
-  const posteTotBP=d.postes.reduce((s,p)=>s+n(p.budgetPrevu),0);
-  const posteTotRE=d.postes.reduce((s,p)=>s+(p.source==='heures'?moReelAuto:n(p.reelEngage)),0);
-  const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-(p.source==='heures'?moReelAuto:n(p.reelEngage))),0);
-
+  const totAv=c.posteBudgetTot>0?Math.min(c.posteReelTot/c.posteBudgetTot*100,999):0;
   return`
-    <!-- Budget vs Réel par poste (partagé Finances ⇄ Heures) -->
+    <!-- Budget vs Réel par poste analytique (catégories fixes, alimentation auto) -->
     <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-        <div class="card-title" style="margin:0">Budget vs Réel par poste analytique
-          <span class="note" style="font-size:11px;margin-left:6px">— synchronisé entre Finances &amp; Heures</span>
-        </div>
-        ${c.hConso>0?`<div style="font-size:12px;background:#e8f4fd;border:1px solid #b3d9f5;border-radius:6px;padding:6px 12px;color:#0056b3">
-          Heures MO : <strong>${c.hConso}h</strong> × <strong>${c.txH||n(d.heures.txHoraire)}€/h</strong> = <strong>${moReelAuto.toLocaleString('fr-FR')} €</strong>
-          &nbsp;·&nbsp; Assignez "⟳ Heures MO" à un poste pour lier automatiquement
-        </div>`:''}
+      <div class="card-title" style="margin-bottom:6px">Budget vs Réel par poste analytique
+        <span class="note" style="font-size:11px;margin-left:6px">— catégories fixes · réel engagé alimenté automatiquement</span>
+      </div>
+      <div style="font-size:11px;color:var(--sub);margin-bottom:10px">
+        Les postes <span class="badge badge-blue" style="font-size:10px">⟳</span> sont calculés seuls depuis les rubriques Heures, Sous-traitants et Fournisseurs.
+        Vous ne saisissez que le <strong>budget prévu</strong> (et le réel des postes « Saisie manuelle »). Le total alimente le suivi financier global.
       </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Poste</th><th>Source</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
-          <tbody>${posteRows}</tbody>
+          <thead><tr><th>Poste analytique</th><th>Alimentation</th><th>Budget prévu</th><th>Réel engagé</th><th>Écart (B−R)</th><th>Avancement</th></tr></thead>
+          <tbody>${rows}</tbody>
           <tfoot><tr style="background:#f0f2f5;font-weight:700">
             <td colspan="2">Total</td>
-            <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
-            <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
-            <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
-            <td style="color:${(posteTotBP-posteTotRE-posteTotRAE)<0?'var(--neg)':'var(--pos)'}">
-              ${posteTotBP>0?eurRaw(posteTotBP-posteTotRE-posteTotRAE):'—'}
-            </td>
-            <td colspan="2"></td>
+            <td>${c.posteBudgetTot>0?eurRaw(c.posteBudgetTot):'—'}</td>
+            <td>${c.posteReelTot>0?eurRaw(c.posteReelTot):'—'}</td>
+            <td style="color:${c.posteEcartTot<0?'var(--neg)':'var(--pos)'}">${(c.posteBudgetTot>0||c.posteReelTot>0)?eurRaw(c.posteEcartTot):'—'}</td>
+            <td>${c.posteBudgetTot>0?totAv.toFixed(0)+'%':'—'}</td>
           </tr></tfoot>
         </table>
       </div>
-      <button class="add-row-btn" data-action="addRow" data-list="postes">${svgIcon(ico.plus,13)} Ajouter poste</button>
     </div>
   `;
 }
