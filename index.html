@@ -1020,6 +1020,7 @@ function renderHeures(d,c){
       </div>`:''}
     </div>
     ${catBars?`<div class="card" style="margin-bottom:14px"><div class="card-title">Répartition par catégorie</div>${catBars}</div>`:''}
+    ${posteAnalytiqueCard(d,c)}
     <div class="card">
       <div class="tabs">
         <button class="tab-btn${tab==='semaine'?' active':''}" data-action="hTab" data-val="semaine">Saisie hebdomadaire</button>
@@ -1513,14 +1514,11 @@ function renderDashboard(d,c){
   `;
 }
 
-// Finance / RAF
-function renderFinance(d,c){
-  // ── Flux financier ──────────────────────────────────────────────────────────
-  const txFact=c.marcheActualise>0?c.totalFacture/c.marcheActualise*100:0;
-  const txEnc=c.totalFacture>0?c.totalEncaisse/c.totalFacture*100:0;
-  const retardsSit=c.situations.filter(s=>s.retard>0).length;
-
-  // ── Budget vs Réel par poste ─────────────────────────────────────────────
+// ── Budget vs Réel par poste analytique — carte partagée Finances ⇄ Heures ──
+// Les deux rubriques s'alimentent des mêmes données (d.postes) : toute saisie
+// dans l'une est répercutée dans l'autre, et le poste « ⟳ Heures MO » se
+// calcule automatiquement depuis les heures consommées.
+function posteAnalytiqueCard(d,c){
   const moReelAuto=Math.round(c.hConso*(c.txH||n(d.heures.txHoraire)));
   const posteRows=d.postes.map((p,i)=>{
     const src=p.source||'manuel';
@@ -1561,6 +1559,49 @@ function renderFinance(d,c){
   const posteTotBP=d.postes.reduce((s,p)=>s+n(p.budgetPrevu),0);
   const posteTotRE=d.postes.reduce((s,p)=>s+(p.source==='heures'?moReelAuto:n(p.reelEngage)),0);
   const posteTotRAE=d.postes.reduce((s,p)=>s+n(p.resteAEng)||Math.max(0,n(p.budgetPrevu)-(p.source==='heures'?moReelAuto:n(p.reelEngage))),0);
+
+  return`
+    <!-- Budget vs Réel par poste (partagé Finances ⇄ Heures) -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">Budget vs Réel par poste analytique
+          <span class="note" style="font-size:11px;margin-left:6px">— synchronisé entre Finances &amp; Heures</span>
+        </div>
+        ${c.hConso>0?`<div style="font-size:12px;background:#e8f4fd;border:1px solid #b3d9f5;border-radius:6px;padding:6px 12px;color:#0056b3">
+          Heures MO : <strong>${c.hConso}h</strong> × <strong>${c.txH||n(d.heures.txHoraire)}€/h</strong> = <strong>${moReelAuto.toLocaleString('fr-FR')} €</strong>
+          &nbsp;·&nbsp; Assignez "⟳ Heures MO" à un poste pour lier automatiquement
+        </div>`:''}
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Poste</th><th>Source</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
+          <tbody>${posteRows}</tbody>
+          <tfoot><tr style="background:#f0f2f5;font-weight:700">
+            <td colspan="2">Total</td>
+            <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
+            <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
+            <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
+            <td style="color:${(posteTotBP-posteTotRE-posteTotRAE)<0?'var(--neg)':'var(--pos)'}">
+              ${posteTotBP>0?eurRaw(posteTotBP-posteTotRE-posteTotRAE):'—'}
+            </td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+      <button class="add-row-btn" data-action="addRow" data-list="postes">${svgIcon(ico.plus,13)} Ajouter poste</button>
+    </div>
+  `;
+}
+
+// Finance / RAF
+function renderFinance(d,c){
+  // ── Flux financier ──────────────────────────────────────────────────────────
+  const txFact=c.marcheActualise>0?c.totalFacture/c.marcheActualise*100:0;
+  const txEnc=c.totalFacture>0?c.totalEncaisse/c.totalFacture*100:0;
+  const retardsSit=c.situations.filter(s=>s.retard>0).length;
+
+  // ── Budget vs Réel par poste ──> extrait dans posteAnalytiqueCard(d,c),
+  //    partagé avec la rubrique Heures pour une saisie synchronisée.
 
   // ── Situations ──────────────────────────────────────────────────────────────
   const sitRows=c.situations.map((sit,i)=>{
@@ -1724,33 +1765,7 @@ function renderFinance(d,c){
       </div>
     </div>
 
-    <!-- Budget vs Réel par poste -->
-    <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="card-title" style="margin:0">Budget vs Réel par poste analytique</div>
-        ${c.hConso>0?`<div style="font-size:12px;background:#e8f4fd;border:1px solid #b3d9f5;border-radius:6px;padding:6px 12px;color:#0056b3">
-          Heures MO : <strong>${c.hConso}h</strong> × <strong>${c.txH||n(d.heures.txHoraire)}€/h</strong> = <strong>${moReelAuto.toLocaleString('fr-FR')} €</strong>
-          &nbsp;·&nbsp; Assignez "⟳ Heures MO" à un poste pour lier automatiquement
-        </div>`:''}
-      </div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Poste</th><th>Source</th><th>Budget prévu</th><th>Réel engagé</th><th>Reste à engager</th><th>Écart (B-EAC)</th><th>Avancement</th><th></th></tr></thead>
-          <tbody>${posteRows}</tbody>
-          <tfoot><tr style="background:#f0f2f5;font-weight:700">
-            <td colspan="2">Total</td>
-            <td>${posteTotBP>0?eurRaw(posteTotBP):'—'}</td>
-            <td>${posteTotRE>0?eurRaw(posteTotRE):'—'}</td>
-            <td>${posteTotRAE>0?eurRaw(posteTotRAE):'—'}</td>
-            <td style="color:${(posteTotBP-posteTotRE-posteTotRAE)<0?'var(--neg)':'var(--pos)'}">
-              ${posteTotBP>0?eurRaw(posteTotBP-posteTotRE-posteTotRAE):'—'}
-            </td>
-            <td colspan="2"></td>
-          </tr></tfoot>
-        </table>
-      </div>
-      <button class="add-row-btn" data-action="addRow" data-list="postes">${svgIcon(ico.plus,13)} Ajouter poste</button>
-    </div>
+    ${posteAnalytiqueCard(d,c)}
 
     <!-- Situations de travaux -->
     <div class="card" style="margin-bottom:14px">
@@ -1835,10 +1850,11 @@ function renderST(d,c){
     ['Situations émises',c.stSitTotal>0?eurRaw(c.stSitTotal):'—','var(--text)'],
     ['DC4 manquants',c.stDC4>0?c.stDC4:'0',c.stDC4>0?'var(--neg)':'var(--pos)'],
   ];
-  const rows=d.st.map((s,i)=>{
+  const rows=d.st.flatMap((s,i)=>{
     const dc4Color=s.dc4==='Oui'?'var(--pos)':'var(--neg)';
     const agColor=s.agrement==='Oui'?'var(--pos)':'var(--warn)';
-    return`<tr>
+    return[
+      `<tr>
       <td><span class="dot" style="background:${s.entreprise?(s.dc4==='Oui'?'var(--pos)':'var(--warn)'):'var(--border)'}"></span></td>
       <td><input type="text" name="st.${i}.entreprise" value="${esc(s.entreprise)}" style="width:140px"></td>
       <td><input type="text" name="st.${i}.lot" value="${esc(s.lot)}" style="width:100px"></td>
@@ -1861,8 +1877,18 @@ function renderST(d,c){
       <td><select name="st.${i}.statut">
         ${['—','En cours','Terminé','Litigieux'].map(v=>`<option${s.statut===v?' selected':''}>${v}</option>`).join('')}
       </select></td>
-      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="st" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-    </tr>`;
+      <td style="white-space:nowrap">
+        <button class="detail-expand-btn" data-action="toggleDetail" data-key="st${i}" title="Détail">▼ Détail</button>
+        <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="st" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+      </td>
+    </tr>`,
+      `<tr id="detail-row-st${i}" class="detail-row" style="display:${s.obs?'table-row':'none'}">
+        <td colspan="11">
+          <label class="form-label" style="display:block;margin-bottom:4px">Descriptif des travaux / prestations du sous-traitant</label>
+          <textarea name="st.${i}.obs" class="form-textarea" rows="3" style="width:100%;max-width:700px">${esc(s.obs||'')}</textarea>
+        </td>
+      </tr>`
+    ];
   }).join('');
   return`
     <h1 class="page-title">Sous-traitants</h1>
@@ -1870,7 +1896,7 @@ function renderST(d,c){
       ${stKpis.map(([l,v,col])=>`<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value" style="color:${col};font-size:17px">${v}</div></div>`).join('')}
     </div>
     <div class="card">
-      <div class="card-title">Liste des sous-traitants</div>
+      <div class="card-title">Liste des sous-traitants <span class="note" style="font-size:11px;margin-left:6px">— Cliquez "▼ Détail" pour ajouter un descriptif</span></div>
       <div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:var(--sub)">
         <span><span class="dot" style="background:var(--pos);display:inline-block;margin-right:4px"></span>DC4 conforme</span>
         <span><span class="dot" style="background:var(--warn);display:inline-block;margin-right:4px"></span>DC4 à régulariser</span>
@@ -2011,9 +2037,10 @@ const NAV_ITEMS=[
   {id:'planning',icon:ico.plan,label:'Planning',screen:'planning'},
   {id:'heures',icon:ico.heure,label:'Heures',screen:'heures'},
   {id:'reserves',icon:ico.res,label:'Réserves',screen:'reserves'},
-  {id:'checklist',icon:ico.check,label:'Checklist',screen:'checklist'},
   {id:'ts',icon:ico.ts,label:'TS/Aléas',screen:'ts'},
   {id:'cr',icon:ico.cr,label:'CR',screen:'cr'},
+  {sep:true},
+  {id:'checklist',icon:ico.check,label:'Checklist',screen:'checklist'},
 ];
 
 function renderNav(){
