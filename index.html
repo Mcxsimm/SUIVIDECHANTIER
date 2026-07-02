@@ -923,37 +923,30 @@ function computeAll(d){
   const fTotal=d.fournisseurs.reduce((s,x)=>s+n(x.montant),0);
   const fournActifs=d.fournisseurs.filter(f=>f.fournisseur).length;
 
-  // ── Postes analytiques = TÂCHES DU PLANNING ───────────────────────────────
-  //    Chaque tâche du planning est un poste : on y suit le budget prévu, le
-  //    réel engagé et l'avancement physique. Le lien Planning ⇄ Finances ⇄
-  //    Heures est structurel (mêmes lignes, mêmes données).
+  // ── Avancement des tâches (planning) — pour cockpit & planning ─────────────
   const posteTasks=d.planning.map((t,i)=>{
-    const budget=n(t.budgetPrevu);
-    const reel=n(t.reelEngage);
     const av=n(t.avancement);
-    const ecart=budget-reel;
-    const valeurAcquise=budget*av/100;          // Valeur acquise (EV)
-    const eacTask=av>0?reel/(av/100):budget;    // Estimation à terminaison
-    return{i,tache:t.tache,responsable:t.responsable,statut:t.statut,debut:t.debut,fin:t.fin,budget,reel,av,ecart,valeurAcquise,eacTask};
+    return{i,tache:t.tache,responsable:t.responsable,statut:t.statut,debut:t.debut,fin:t.fin,av};
   });
-  const posteBudgetTot=posteTasks.reduce((s,p)=>s+p.budget,0);
-  const posteReelTot=posteTasks.reduce((s,p)=>s+p.reel,0);
-  const posteEcartTot=posteBudgetTot-posteReelTot;
-  const posteEVTot=posteTasks.reduce((s,p)=>s+p.valeurAcquise,0);
-  // Avancement pondéré par le budget (avancement financier / valeur acquise)
-  const posteAvPond=posteBudgetTot>0?posteEVTot/posteBudgetTot*100:0;
 
-  // Finance — le réel engagé global est piloté par les postes analytiques
+  // ── Dépenses engagées AUTOMATIQUES (aucune saisie manuelle de budget) ──────
+  //    Réel engagé = Main d'œuvre (heures × taux) + Sous-traitants + Fournisseurs
+  const depenseMO=Math.round(hConso*txH);
+  const depenseST=d.st.reduce((s,x)=>s+n(x.montantHT),0);
+  const depenseFourn=fTotal;
+  const reelEngageAuto=depenseMO+depenseST+depenseFourn;
+
+  // Finance — suivi ENTIÈREMENT AUTOMATISÉ (réel calculé depuis les rubriques)
   const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
   const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
   const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
   const marcheActualise=marcheInitial+avenantsSignes;
-  const budgetCR=n(d.finance.budgetCR)||posteBudgetTot||marcheInitial;
-  const reelEngage=n(d.finance.reelEngage)||posteReelTot;
+  const budgetCR=n(d.finance.budgetCR)||marcheInitial;
+  const reelEngage=n(d.finance.reelEngage)||reelEngageAuto;
   const resteAEngager=n(d.finance.resteAEngager);
-  const eac=reelEngage+(resteAEngager>0?resteAEngager:0);
-  const margeBrute=budgetCR-reelEngage;
-  const tauxMarge=budgetCR>0?margeBrute/budgetCR*100:0;
+  const eac=reelEngage+(resteAEngager>0?resteAEngager:Math.max(0,budgetCR-reelEngage));
+  const margeBrute=marcheActualise-eac;
+  const tauxMarge=marcheActualise>0?margeBrute/marcheActualise*100:0;
 
   // Situations
   const totalFacture=d.situations.reduce((s,sit)=>s+n(sit.montantHT),0);
@@ -1043,7 +1036,7 @@ function computeAll(d){
     hBudg,hConso,txH,hPct,hSolde,hSeuil,hColor,catMap,
     stTotal,stSitTotal,stActifs,stDC4,
     fTotal,fournActifs,
-    posteTasks,posteBudgetTot,posteReelTot,posteEcartTot,posteEVTot,posteAvPond,
+    posteTasks,depenseMO,depenseST,depenseFourn,reelEngageAuto,
     rafDefs,rafMonths,rafCnt,
     resTotal,resOuvertes,resLevees,
     clDDone,clRDone,
@@ -1195,23 +1188,17 @@ function renderPlanning(d,c){
   const today=new Date();
   const taskRows=d.planning.map((t,i)=>{
     const av=n(t.avancement);
-    const bp=n(t.budgetPrevu);
-    const re=n(t.reelEngage);
-    const ecart=bp-re;
-    const overBudget=bp>0&&re>bp;
     const overdue=t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<today;
     return`<tr>
-      <td><input type="text" name="planning.${i}.tache" value="${esc(t.tache)}" style="width:150px"></td>
-      <td><input type="text" name="planning.${i}.responsable" value="${esc(t.responsable)}" style="width:100px"></td>
+      <td><input type="text" name="planning.${i}.tache" value="${esc(t.tache)}" style="width:160px"></td>
+      <td><input type="text" name="planning.${i}.responsable" value="${esc(t.responsable)}" style="width:110px"></td>
+      <td><input type="text" name="planning.${i}.lot" value="${esc(t.lot)}" style="width:110px" placeholder="Lot"></td>
       <td style="white-space:nowrap"><input type="number" name="planning.${i}.duree" value="${t.duree||''}" style="width:50px"> j</td>
       <td><input type="date" name="planning.${i}.debut" value="${t.debut||''}"></td>
       <td><input type="date" name="planning.${i}.fin" value="${t.fin||''}" style="${overdue?'color:var(--neg)':''}"></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="planning.${i}.budgetPrevu" value="${t.budgetPrevu||''}" style="width:85px" placeholder="0"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="planning.${i}.reelEngage" value="${t.reelEngage||''}" style="width:85px" placeholder="0"></div></td>
-      <td class="auto" style="font-weight:600;color:${ecart<0?'var(--neg)':ecart>0?'var(--pos)':'var(--sub)'}">${(bp>0||re>0)?eurRaw(ecart):'—'}</td>
       <td style="min-width:120px">
         <div style="display:flex;align-items:center;gap:6px">
-          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${av}%;background:${av>=100?'var(--pos)':overBudget?'var(--neg)':'var(--acc)'}"></div></div>
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${av}%;background:${av>=100?'var(--pos)':'var(--acc)'}"></div></div>
           <input type="number" name="planning.${i}.avancement" value="${t.avancement||''}" style="width:46px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100">%
         </div>
       </td>
@@ -1239,25 +1226,16 @@ function renderPlanning(d,c){
     <h1 class="page-title">Planning</h1>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Avancement moyen</div><div class="kpi-value">${c.planAv>0?pct(c.planAv):'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Avancement pondéré (budget)</div><div class="kpi-value" style="color:var(--acc)">${c.posteAvPond>0?pct(c.posteAvPond):'—'}</div><div class="kpi-sub">Valeur acquise : ${c.posteEVTot>0?eurRaw(c.posteEVTot):'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Budget / Réel</div><div class="kpi-value" style="font-size:15px">${c.posteBudgetTot>0?eurRaw(c.posteBudgetTot):'—'}</div><div class="kpi-sub">Réel engagé : ${c.posteReelTot>0?eurRaw(c.posteReelTot):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Tâches</div><div class="kpi-value">${d.planning.filter(t=>t.tache).length}</div></div>
       <div class="kpi-card"><div class="kpi-label">Tâches en retard</div><div class="kpi-value" style="color:${c.alerts.find(a=>a.msg.includes('retard'))? 'var(--neg)':'var(--sub)'}">${d.planning.filter(t=>t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<today).length}</div></div>
       <div class="kpi-card"><div class="kpi-label">Jalons atteints</div><div class="kpi-value">${d.jalons.filter(j=>j.dateReel).length} / ${d.jalons.length}</div></div>
     </div>
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Tâches <span class="note" style="font-size:11px;margin-left:6px">— chaque tâche est un poste analytique (budget · réel · avancement)</span></div>
+      <div class="card-title">Tâches & planning <span class="note" style="font-size:11px;margin-left:6px">— vue détaillée (voir aussi la rubrique Tâches)</span></div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Tâche</th><th>Responsable</th><th>Durée</th><th>Début</th><th>Fin</th><th>Budget prévu</th><th>Réel engagé</th><th>Écart</th><th>Avancement</th><th>Statut</th><th></th></tr></thead>
+          <thead><tr><th>Tâche</th><th>Responsable</th><th>Lot</th><th>Durée</th><th>Début</th><th>Fin</th><th>Avancement</th><th>Statut</th><th></th></tr></thead>
           <tbody>${taskRows}</tbody>
-          <tfoot><tr style="background:#f0f2f5;font-weight:700">
-            <td colspan="5">Total</td>
-            <td>${c.posteBudgetTot>0?eurRaw(c.posteBudgetTot):'—'}</td>
-            <td>${c.posteReelTot>0?eurRaw(c.posteReelTot):'—'}</td>
-            <td style="color:${c.posteEcartTot<0?'var(--neg)':'var(--pos)'}">${(c.posteBudgetTot>0||c.posteReelTot>0)?eurRaw(c.posteEcartTot):'—'}</td>
-            <td>${c.posteAvPond>0?c.posteAvPond.toFixed(0)+'%':'—'}</td>
-            <td colspan="2"></td>
-          </tr></tfoot>
         </table>
       </div>
       <button class="add-row-btn" data-action="addRow" data-list="planning">${svgIcon(ico.plus,13)} Ajouter tâche</button>
@@ -1367,7 +1345,7 @@ function renderHeures(d,c){
       </div>`:''}
     </div>
     ${catBars?`<div class="card" style="margin-bottom:14px"><div class="card-title">Répartition par catégorie</div>${catBars}</div>`:''}
-    ${posteAnalytiqueCard(d,c)}
+    ${cadenceCard(d,c)}
     <div class="card">
       <div class="tabs">
         <button class="tab-btn${tab==='semaine'?' active':''}" data-action="hTab" data-val="semaine">Saisie hebdomadaire</button>
@@ -1867,55 +1845,82 @@ function renderDashboard(d,c){
   `;
 }
 
-// ── Budget vs Réel par poste analytique = TÂCHES DU PLANNING ──────────────────
-// Chaque tâche du planning EST un poste analytique. On y saisit le budget prévu,
-// le réel engagé et l'avancement physique — les mêmes données qu'en Planning
-// (édition synchronisée). La carte est affichée dans Finances ET dans Heures ;
-// le total pilote le réel engagé global du suivi financier.
-function posteAnalytiqueCard(d,c){
-  const rows=c.posteTasks.map(p=>{
-    const overBudget=p.budget>0&&p.reel>p.budget;
-    const statColor=p.statut==='Terminé'?'var(--pos)':p.statut==='En retard'?'var(--neg)':p.statut==='En cours'?'var(--acc)':'var(--sub)';
+// ── Dépenses engagées automatiques (carte Finances) ───────────────────────────
+// Le réel engagé est calculé seul : MO (heures × taux) + ST + Fournisseurs.
+function depensesEngageesCard(d,c){
+  const tot=c.reelEngageAuto||0;
+  const items=[
+    {label:"Main d'œuvre",val:c.depenseMO,src:`${c.hConso||0} h × ${c.txH} €/h`,color:'var(--acc)'},
+    {label:'Sous-traitants',val:c.depenseST,src:`${d.st.filter(s=>s.entreprise).length} contrat(s)`,color:'var(--neu)'},
+    {label:'Fournisseurs & matériel',val:c.depenseFourn,src:`${d.fournisseurs.filter(f=>f.fournisseur).length} commande(s)`,color:'var(--warn)'},
+  ];
+  return`
+    <div class="ck-card" style="margin-bottom:16px">
+      <div class="ck-head" style="margin-bottom:4px">${svgIcon(ico.fin,14)} Dépenses engagées par nature
+        <span class="note" style="font-size:11px;margin-left:6px;text-transform:none;letter-spacing:0">— 100% automatique</span>
+      </div>
+      <div style="font-size:11px;color:var(--sub);margin-bottom:12px">Alimenté par les rubriques Heures, Sous-traitants et Fournisseurs. Aucune saisie.</div>
+      ${items.map(it=>`<div class="fin-line">
+        <span class="fin-lbl">${it.label}<div style="font-size:10px;color:var(--sub)">${it.src}</div></span>
+        <div class="fin-track"><div class="fin-seg" style="width:${tot>0?Math.min(it.val/tot*100,100):0}%;background:${it.color}"></div></div>
+        <span class="fin-amt">${it.val>0?eurRaw(it.val):'—'}</span>
+      </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:4px;font-weight:700">
+        <span>Total réel engagé</span><span>${tot>0?eurRaw(tot):'—'}</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Suivi des cadences / heures (carte Heures) ────────────────────────────────
+// Par ouvrage : quantité réalisée, heures passées, rendement réel vs prévu,
+// temps unitaire et coût de main d'œuvre. Remplace le budget vs réel par poste.
+function cadenceCard(d,c){
+  const entries=d.heuresEntries||[];
+  let totH=0,totCout=0;
+  const rows=entries.map((e,i)=>{
+    const h=n(e.heures),q=n(e.qte),prev=n(e.cadencePrev),tx=c.txH;
+    const rend=h>0?q/h:0;                 // rendement réel (u/h)
+    const tps=q>0?h/q:0;                  // temps unitaire (h/u)
+    const cout=h*tx;                       // coût MO
+    const coutU=q>0?cout/q:0;             // coût unitaire
+    const ecart=prev>0?(rend-prev)/prev*100:0;
+    totH+=h;totCout+=cout;
+    const ecartColor=ecart>=0?'var(--pos)':'var(--neg)';
     return`<tr>
-      <td><input type="text" name="planning.${p.i}.tache" value="${esc(p.tache)}" style="width:150px" placeholder="Tâche ${p.i+1}"></td>
-      <td><input type="text" name="planning.${p.i}.responsable" value="${esc(p.responsable)}" style="width:100px" placeholder="Responsable"></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="planning.${p.i}.budgetPrevu" value="${p.budget||''}" style="width:95px" placeholder="0"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="planning.${p.i}.reelEngage" value="${p.reel||''}" style="width:95px" placeholder="0"></div></td>
-      <td class="auto" style="font-weight:600;color:${p.ecart<0?'var(--neg)':p.ecart>0?'var(--pos)':'var(--sub)'}">${(p.budget>0||p.reel>0)?eurRaw(p.ecart):'—'}</td>
-      <td class="auto" title="Valeur acquise = budget × avancement">${p.budget>0?eurRaw(p.valeurAcquise):'—'}</td>
-      <td style="min-width:135px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${Math.min(p.av,100)}%;background:${p.av>=100?'var(--pos)':overBudget?'var(--neg)':'var(--acc)'}"></div></div>
-          <input type="number" name="planning.${p.i}.avancement" value="${p.av||''}" style="width:44px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 4px" min="0" max="100"> %
-        </div>
-      </td>
-      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="planning" data-idx="${p.i}">${svgIcon(ico.trash,13)}</button></td>
+      <td><input type="text" name="heuresEntries.${i}.ouvrage" value="${esc(e.ouvrage)}" style="width:140px" placeholder="Ouvrage / tâche"></td>
+      <td><input type="text" name="heuresEntries.${i}.unite" value="${esc(e.unite)}" style="width:55px" placeholder="m², ml…"></td>
+      <td><input type="number" name="heuresEntries.${i}.qte" value="${e.qte||''}" style="width:70px" placeholder="0"></td>
+      <td><input type="number" name="heuresEntries.${i}.heures" value="${e.heures||''}" style="width:65px" placeholder="0"> h</td>
+      <td class="auto" style="font-weight:600">${rend>0?num2(rend):'—'}</td>
+      <td><input type="number" name="heuresEntries.${i}.cadencePrev" value="${e.cadencePrev||''}" style="width:60px" placeholder="0"></td>
+      <td class="auto" style="font-weight:600;color:${prev>0?ecartColor:'var(--sub)'}">${prev>0?(ecart>=0?'+':'')+ecart.toFixed(0)+'%':'—'}</td>
+      <td class="auto">${tps>0?num2(tps):'—'}</td>
+      <td class="auto">${cout>0?eurRaw(cout):'—'}</td>
+      <td class="auto">${coutU>0?eurRaw(coutU):'—'}</td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="heuresEntries" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
     </tr>`;
   }).join('');
   return`
-    <!-- Budget vs Réel par poste analytique (= tâches du planning) -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title" style="margin-bottom:6px">Budget vs Réel par poste analytique
-        <span class="note" style="font-size:11px;margin-left:6px">— un poste = une tâche du Planning</span>
-      </div>
+      <div class="card-title" style="margin-bottom:6px">Suivi des cadences & heures par ouvrage</div>
       <div style="font-size:11px;color:var(--sub);margin-bottom:10px">
-        Les postes sont les <strong>tâches du Planning</strong>. Saisissez le budget prévu, le réel engagé et l'avancement de chaque tâche (édition synchronisée avec la rubrique Planning). Le total alimente le suivi financier global et l'avancement pondéré.
+        Rendement réel = quantité ÷ heures (dans l'unité de l'ouvrage). Comparez-le à la cadence prévue pour repérer les dérives de productivité. Coût MO = heures × ${c.txH} €/h.
       </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Poste / Tâche</th><th>Responsable</th><th>Budget prévu</th><th>Réel engagé</th><th>Écart (B−R)</th><th>Valeur acquise</th><th>Avancement</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
+          <thead><tr><th>Ouvrage</th><th>Unité</th><th>Qté réal.</th><th>Heures</th><th>Rendt réel<br><span style="font-weight:400">(u/h)</span></th><th>Cadence prévue<br><span style="font-weight:400">(u/h)</span></th><th>Écart</th><th>Temps unit.<br><span style="font-weight:400">(h/u)</span></th><th>Coût MO</th><th>Coût / u</th><th></th></tr></thead>
+          <tbody>${rows||'<tr><td colspan="11" style="text-align:center;color:var(--sub);padding:16px">Aucun ouvrage suivi — cliquez « Ajouter ».</td></tr>'}</tbody>
           <tfoot><tr style="background:#f0f2f5;font-weight:700">
-            <td colspan="2">Total</td>
-            <td>${c.posteBudgetTot>0?eurRaw(c.posteBudgetTot):'—'}</td>
-            <td>${c.posteReelTot>0?eurRaw(c.posteReelTot):'—'}</td>
-            <td style="color:${c.posteEcartTot<0?'var(--neg)':'var(--pos)'}">${(c.posteBudgetTot>0||c.posteReelTot>0)?eurRaw(c.posteEcartTot):'—'}</td>
-            <td>${c.posteEVTot>0?eurRaw(c.posteEVTot):'—'}</td>
-            <td>${c.posteBudgetTot>0?c.posteAvPond.toFixed(0)+'% pondéré':'—'}</td>
+            <td colspan="3">Total</td>
+            <td>${totH>0?totH+' h':'—'}</td>
+            <td colspan="4"></td>
+            <td>${totCout>0?eurRaw(totCout):'—'}</td>
+            <td></td>
           </tr></tfoot>
         </table>
       </div>
-      <button class="add-row-btn" data-action="addRow" data-list="planning">${svgIcon(ico.plus,13)} Ajouter tâche</button>
+      <button class="add-row-btn" data-action="addRow" data-list="heuresEntries">${svgIcon(ico.plus,13)} Ajouter un ouvrage</button>
     </div>
   `;
 }
@@ -1927,8 +1932,8 @@ function renderFinance(d,c){
   const txEnc=c.totalFacture>0?c.totalEncaisse/c.totalFacture*100:0;
   const retardsSit=c.situations.filter(s=>s.retard>0).length;
 
-  // ── Budget vs Réel par poste ──> extrait dans posteAnalytiqueCard(d,c),
-  //    partagé avec la rubrique Heures pour une saisie synchronisée.
+  // ── Dépenses engagées : voir depensesEngageesCard (100% automatique) ──
+  //    Cadences/heures par ouvrage : voir cadenceCard (rubrique Heures).
 
   // ── Situations ──────────────────────────────────────────────────────────────
   const sitRows=c.situations.map((sit,i)=>{
@@ -2110,7 +2115,7 @@ function renderFinance(d,c){
       </div>
     </div>
 
-    ${posteAnalytiqueCard(d,c)}
+    ${depensesEngageesCard(d,c)}
 
     <!-- Paramètres financiers -->
     <div class="card" style="margin-bottom:14px">
@@ -2121,9 +2126,9 @@ function renderFinance(d,c){
         <div class="form-field"><label class="form-label">Avenants signés</label>
           <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.avenantsSignes" value="${d.finance.avenantsSignes||''}" class="form-input" placeholder="auto : ${eurRaw(avCumul)}"></div></div>
         <div class="form-field"><label class="form-label">Budget objectif (CR)</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input" placeholder="auto : ${eurRaw(c.posteBudgetTot)}"></div></div>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input" placeholder="auto : ${eurRaw(c.marcheInitial)}"></div></div>
         <div class="form-field"><label class="form-label">Réel engagé à date</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input" placeholder="auto : ${eurRaw(c.posteReelTot)}"></div></div>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input" placeholder="auto : ${eurRaw(c.reelEngageAuto)}"></div></div>
         <div class="form-field"><label class="form-label">Reste à engager</label>
           <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.resteAEngager" value="${d.finance.resteAEngager||''}" class="form-input" placeholder="auto : ${eurRaw(rad)}"></div></div>
         <div class="form-field"><label class="form-label">Frais généraux chantier</label>
@@ -2578,7 +2583,7 @@ function exportWeeklyPdf(){
   const today=new Date();today.setHours(0,0,0,0);
   const late=d.planning.filter(t=>t.tache&&t.fin&&normStatut(t.statut)!=='Terminé'&&new Date(t.fin)<today);
   const soon=d.planning.filter(t=>t.tache&&t.fin&&normStatut(t.statut)!=='Terminé'&&new Date(t.fin)>=today).sort((a,b)=>a.fin.localeCompare(b.fin)).slice(0,8);
-  const av=Math.round(c.posteBudgetTot>0?c.posteAvPond:c.planAv);
+  const av=Math.round(c.planAv);
   const body=reportHeader(d,'Rapport hebdomadaire')+`
     <div class="kpis">
       <div class="kpi"><span class="muted">Avancement</span><b>${av}%</b></div>
@@ -2592,7 +2597,7 @@ function exportWeeklyPdf(){
 }
 function exportSynthesePdf(){
   const ch=getActive();if(!ch)return;const d=ch.d,c=computeAll(d);
-  const av=Math.round(c.posteBudgetTot>0?c.posteAvPond:c.planAv);
+  const av=Math.round(c.planAv);
   const lotMap={};d.planning.forEach(t=>{if(!t.tache)return;const l=(t.lot||'').trim()||'Général';if(!lotMap[l])lotMap[l]={b:0,ev:0,s:0,nb:0};const b=n(t.budgetPrevu),a=n(t.avancement);lotMap[l].b+=b;lotMap[l].ev+=b*a/100;lotMap[l].s+=a;lotMap[l].nb++;});
   const lots=Object.entries(lotMap).map(([nom,v])=>({nom,pct:Math.round(v.b>0?v.ev/v.b*100:(v.nb?v.s/v.nb:0))}));
   const recent=(d.journal||[]).slice(0,3);
@@ -2823,7 +2828,7 @@ function renderPortfolio(){
 function renderHome(d,c){
   const s=summarize(d);
   const today=new Date();today.setHours(0,0,0,0);
-  const av=Math.round(c.posteBudgetTot>0?c.posteAvPond:c.planAv);
+  const av=Math.round(c.planAv);
   const ringColor=av>=100?'var(--pos)':av>=50?'var(--acc)':'var(--warn)';
 
   // Tâches en retard
@@ -2870,7 +2875,7 @@ function renderHome(d,c){
           <div class="ring" style="--p:${Math.min(av,100)};background:conic-gradient(${ringColor} calc(var(--p)*1%),var(--border) 0)"><span>${av}%</span></div>
           <div style="font-size:12px;color:var(--sub)">
             ${nbTasks} tâche${nbTasks>1?'s':''}<br>
-            ${c.posteBudgetTot>0?'pondéré budget':'moyenne simple'}
+            avancement moyen
           </div>
         </div>
       </div>
