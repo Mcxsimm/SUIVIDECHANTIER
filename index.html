@@ -288,6 +288,25 @@ body.dark input[type=date],body.dark input[type=time],body.dark input[type=month
 .event-item:last-child{border-bottom:none}
 .event-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;background:var(--acc)}
 
+/* Finance — compte de résultat visuel */
+.fin-line{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.fin-lbl{width:150px;font-size:12px;color:var(--sub);flex-shrink:0}
+.fin-track{flex:1;height:24px;background:var(--border);border-radius:7px;overflow:hidden;display:flex}
+.fin-seg{height:100%}
+.fin-amt{width:170px;text-align:right;font-weight:700;font-size:13px;flex-shrink:0}
+.fin-flow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.fin-box{flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.fin-box .fb-l{font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.fin-box .fb-v{font-size:15px;font-weight:700}
+.fin-arrow{align-self:center;color:var(--sub);font-size:16px}
+.marge-gauge{height:14px;border-radius:7px;background:var(--border);position:relative;overflow:hidden;margin:6px 0}
+.marge-gauge>i{position:absolute;top:0;bottom:0;left:0;border-radius:7px}
+.marge-tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);opacity:.55}
+@media(max-width:760px){
+  .fin-lbl{width:96px;font-size:11px}
+  .fin-amt{width:auto;min-width:96px;font-size:12px}
+}
+
 /* Status / priority chips */
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
 .st-afaire{background:#eef1f4;color:#5b738b}.st-encours{background:#e8f1fd;color:#0070f2}
@@ -1993,95 +2012,132 @@ function renderFinance(d,c){
   const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
   const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
 
-  // ── Synthèse marché ─────────────────────────────────────────────────────────
-  function flowBox(label,value,color='var(--text)',sub=''){
-    return`<div style="flex:1;min-width:130px;background:#fff;border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
-      <div style="font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">${label}</div>
-      <div style="font-size:17px;font-weight:700;color:${color}">${value}</div>
-      ${sub?`<div style="font-size:11px;color:var(--sub);margin-top:2px">${sub}</div>`:''}
-    </div>`;
-  }
-  const arrow=`<div style="color:var(--sub);font-size:18px;align-self:center">→</div>`;
+  // ── Indicateurs de marge (sémantique BTP) ──────────────────────────────────
+  const recettes=c.marcheActualise;                 // CA prévu (marché actualisé)
+  const coutObjectif=c.budgetCR;                     // budget de revient objectif
+  const engage=c.reelEngage;                          // dépensé / engagé à date
+  const rad=c.resteAEngager>0?c.resteAEngager:Math.max(0,coutObjectif-engage); // reste à dépenser
+  const eacF=engage+rad;                              // coût final prévu (EAC)
+  const margeObj=recettes-coutObjectif;
+  const tauxObj=recettes>0?margeObj/recettes*100:0;
+  const margePrev=recettes-eacF;
+  const tauxPrev=recettes>0?margePrev/recettes*100:0;
+  const ecartMarge=margePrev-margeObj;
+  const facture=c.totalFacture,encaisse=c.totalEncaisse;
+  const resteAFacturer=Math.max(0,recettes-facture);
+  const treso=encaisse-engage;
+  const consoBudget=coutObjectif>0?engage/coutObjectif*100:0;
+  const retardMontant=c.situations.filter(s=>s.retard>0).reduce((s,x)=>s+n(x.montantHT),0);
+  const refMax=Math.max(recettes,eacF,coutObjectif,1);
+  const w=v=>Math.max(0,Math.min(100,v/refMax*100));
+  const margeColor=margePrev<0?'var(--neg)':margePrev>=margeObj?'var(--pos)':'var(--warn)';
+  const kpi=(label,val,sub,color)=>`<div class="ck-card"><div class="ck-head">${label}</div><div class="ck-val" style="font-size:20px;${color?`color:${color}`:''}">${val}</div>${sub?`<div style="font-size:11px;color:var(--sub)">${sub}</div>`:''}</div>`;
 
   return`
-    <h1 class="page-title">Suivi financier</h1>
-
-    <!-- Saisie paramètres de base -->
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Paramètres financiers</div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="form-field"><label class="form-label">Marché initial HT</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.marcheInitial" value="${d.finance.marcheInitial||''}" class="form-input"></div></div>
-        <div class="form-field"><label class="form-label">Avenants signés</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.avenantsSignes" value="${d.finance.avenantsSignes||''}" class="form-input"></div></div>
-        <div class="form-field"><label class="form-label">Budget CR (coût revient)</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input"></div></div>
-        <div class="form-field"><label class="form-label">Réel engagé à date</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input"></div></div>
-        <div class="form-field"><label class="form-label">Reste à engager</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.resteAEngager" value="${d.finance.resteAEngager||''}" class="form-input"></div></div>
-        <div class="form-field"><label class="form-label">Frais généraux chantier</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.fgChantier" value="${d.finance.fgChantier||''}" class="form-input"></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">Suivi financier</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" data-action="exportWeekly">${svgIcon(ico.pdf,13)} Rapport hebdo</button>
+        <button class="btn btn-ghost btn-sm" data-action="exportSynthese">${svgIcon(ico.pdf,13)} Synthèse client</button>
       </div>
     </div>
 
-    <!-- Flux financier visuel -->
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Vue d'ensemble financière</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:16px">
-        ${flowBox('Marché initial',c.marcheInitial>0?eurRaw(c.marcheInitial):'—')}
-        ${arrow}
-        ${flowBox('+ Avenants signés',c.avenantsSignes>0?'+'+eurRaw(c.avenantsSignes):c.avenantsSignes<0?eurRaw(c.avenantsSignes):'—',c.avenantsSignes>=0?'var(--pos)':'var(--neg)')}
-        ${arrow}
-        ${flowBox('= Marché actualisé',c.marcheActualise>0?eurRaw(c.marcheActualise):'—','var(--acc)')}
-        ${arrow}
-        ${flowBox('Budget CR',c.budgetCR>0?eurRaw(c.budgetCR):'—')}
-        ${arrow}
-        ${flowBox('EAC',c.eac>0?eurRaw(c.eac):'—')}
-        ${arrow}
-        ${flowBox('Marge brute',c.budgetCR>0?eurRaw(c.margeBrute):'—',c.margeBrute<0?'var(--neg)':'var(--pos)',c.budgetCR>0?pct(c.tauxMarge):'')}
+    <!-- KPI marge -->
+    <div class="cockpit-grid">
+      ${kpi('Marché actualisé',recettes>0?eurRaw(recettes):'—',`Initial ${eurRaw(c.marcheInitial)} · Avenants ${c.avenantsSignes>=0?'+':''}${eurRaw(c.avenantsSignes)}`,'var(--acc)')}
+      ${kpi('Coût final prévu (EAC)',eacF>0?eurRaw(eacF):'—',`Engagé ${eurRaw(engage)} + RAD ${eurRaw(rad)}`)}
+      ${kpi('Marge prévisionnelle',recettes>0?eurRaw(margePrev):'—',`${recettes>0?pct(tauxPrev):'—'} · objectif ${recettes>0?pct(tauxObj):'—'}`,margeColor)}
+      ${kpi('Trésorerie chantier',(encaisse||engage)?eurRaw(treso):'—',`Encaissé ${eurRaw(encaisse)} − dépensé ${eurRaw(engage)}`,treso<0?'var(--neg)':'var(--pos)')}
+    </div>
+
+    <!-- Compte de résultat visuel -->
+    <div class="ck-card" style="margin-bottom:16px">
+      <div class="ck-head" style="margin-bottom:12px">${svgIcon(ico.fin,14)} Compte de résultat prévisionnel</div>
+      <div class="fin-line">
+        <span class="fin-lbl">Recettes (marché)</span>
+        <div class="fin-track"><div class="fin-seg" style="width:${w(recettes)}%;background:var(--acc)"></div></div>
+        <span class="fin-amt">${eurRaw(recettes)}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-        <!-- Facturation -->
+      <div class="fin-line">
+        <span class="fin-lbl">Coût final (EAC)</span>
+        <div class="fin-track">
+          <div class="fin-seg" style="width:${w(engage)}%;background:var(--neg)" title="Déjà engagé"></div>
+          <div class="fin-seg" style="width:${w(rad)}%;background:#f3b0b0" title="Reste à dépenser"></div>
+        </div>
+        <span class="fin-amt">${eurRaw(eacF)}</span>
+      </div>
+      <div class="fin-line">
+        <span class="fin-lbl">Marge prévue</span>
+        <div class="fin-track"><div class="fin-seg" style="width:${w(Math.max(margePrev,0))}%;background:${margePrev<0?'var(--neg)':'var(--pos)'}"></div></div>
+        <span class="fin-amt" style="color:${margeColor}">${eurRaw(margePrev)} · ${recettes>0?pct(tauxPrev):'—'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--sub);margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+        <span><span style="color:var(--neg)">■</span> engagé &nbsp; <span style="color:#f3b0b0">■</span> reste à dépenser &nbsp; <span style="color:var(--pos)">■</span> marge</span>
+        <span>Écart vs objectif : <strong style="color:${ecartMarge<0?'var(--neg)':'var(--pos)'}">${ecartMarge>=0?'+':''}${eurRaw(ecartMarge)}</strong></span>
+      </div>
+      <div style="margin-top:12px">
+        <div style="font-size:11px;color:var(--sub);margin-bottom:3px">Consommation du budget objectif · <strong>${consoBudget.toFixed(0)}%</strong></div>
+        <div class="prog-bar" style="height:10px"><div class="prog-fill" style="width:${Math.min(consoBudget,100)}%;background:${consoBudget>100?'var(--neg)':consoBudget>90?'var(--warn)':'var(--acc)'}"></div></div>
+      </div>
+    </div>
+
+    <!-- Marché : composition -->
+    <div class="ck-card" style="margin-bottom:16px">
+      <div class="ck-head" style="margin-bottom:10px">${svgIcon(ico.dash,14)} Composition du marché</div>
+      <div class="fin-flow">
+        <div class="fin-box"><div class="fb-l">Marché initial</div><div class="fb-v">${c.marcheInitial>0?eurRaw(c.marcheInitial):'—'}</div></div>
+        <div class="fin-arrow">+</div>
+        <div class="fin-box"><div class="fb-l">Avenants signés</div><div class="fb-v" style="color:${c.avenantsSignes>=0?'var(--pos)':'var(--neg)'}">${c.avenantsSignes!==0?(c.avenantsSignes>0?'+':'')+eurRaw(c.avenantsSignes):'—'}</div></div>
+        <div class="fin-arrow">=</div>
+        <div class="fin-box" style="border-color:var(--acc)"><div class="fb-l">Marché actualisé</div><div class="fb-v" style="color:var(--acc)">${recettes>0?eurRaw(recettes):'—'}</div></div>
+      </div>
+    </div>
+
+    <!-- Facturation & encaissement -->
+    <div class="ck-card" style="margin-bottom:16px">
+      <div class="ck-head" style="margin-bottom:12px">${svgIcon(ico.fin,14)} Facturation & trésorerie</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="cockpit-2col">
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Facturation</div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span>Facturé</span><strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong>
-          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Facturé</span><strong>${facture>0?eurRaw(facture):'—'}</strong></div>
           <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txFact,100)}%;background:var(--acc)"></div></div>
-          <div class="note">${txFact.toFixed(1)}% du marché actualisé${retardsSit>0?` · <span style="color:var(--neg)">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}</div>
+          <div class="note">${txFact.toFixed(0)}% du marché · reste à facturer ${eurRaw(resteAFacturer)}</div>
         </div>
-        <!-- Encaissement -->
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Encaissement</div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span>Encaissé</span><strong>${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong>
-          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Encaissé</span><strong style="color:var(--pos)">${encaisse>0?eurRaw(encaisse):'—'}</strong></div>
           <div class="prog-bar" style="margin-bottom:4px"><div class="prog-fill" style="width:${Math.min(txEnc,100)}%;background:var(--pos)"></div></div>
-          <div class="note">${txEnc.toFixed(1)}% des situations facturées</div>
-        </div>
-        <!-- RAF -->
-        <div>
-          <div style="font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;margin-bottom:6px">Reste à faire total</div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span>RAD consolidé</span><strong>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</strong>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub)">
-            <span>EAC RAF</span><span>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</span>
-          </div>
+          <div class="note">${txEnc.toFixed(0)}% du facturé${retardsSit>0?` · <span style="color:var(--neg);font-weight:600">${retardsSit} retard(s) — ${eurRaw(retardMontant)}</span>`:''}</div>
         </div>
       </div>
     </div>
 
     ${posteAnalytiqueCard(d,c)}
 
+    <!-- Paramètres financiers -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Paramètres financiers <span class="note" style="font-size:11px;margin-left:6px">— laissez vide pour un calcul automatique depuis les postes</span></div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="form-field"><label class="form-label">Marché initial HT</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.marcheInitial" value="${d.finance.marcheInitial||''}" class="form-input"></div></div>
+        <div class="form-field"><label class="form-label">Avenants signés</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.avenantsSignes" value="${d.finance.avenantsSignes||''}" class="form-input" placeholder="auto : ${eurRaw(avCumul)}"></div></div>
+        <div class="form-field"><label class="form-label">Budget objectif (CR)</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.budgetCR" value="${d.finance.budgetCR||''}" class="form-input" placeholder="auto : ${eurRaw(c.posteBudgetTot)}"></div></div>
+        <div class="form-field"><label class="form-label">Réel engagé à date</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.reelEngage" value="${d.finance.reelEngage||''}" class="form-input" placeholder="auto : ${eurRaw(c.posteReelTot)}"></div></div>
+        <div class="form-field"><label class="form-label">Reste à engager</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.resteAEngager" value="${d.finance.resteAEngager||''}" class="form-input" placeholder="auto : ${eurRaw(rad)}"></div></div>
+        <div class="form-field"><label class="form-label">Frais généraux chantier</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="finance.fgChantier" value="${d.finance.fgChantier||''}" class="form-input"></div></div>
+      </div>
+    </div>
+
     <!-- Situations de travaux -->
     <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <div class="card-title" style="margin:0">Situations de travaux</div>
         <div style="display:flex;gap:12px;font-size:12px">
-          <span>Facturé : <strong>${c.totalFacture>0?eurRaw(c.totalFacture):'—'}</strong></span>
-          <span>Encaissé : <strong style="color:var(--pos)">${c.totalEncaisse>0?eurRaw(c.totalEncaisse):'—'}</strong></span>
+          <span>Facturé : <strong>${facture>0?eurRaw(facture):'—'}</strong></span>
+          <span>Encaissé : <strong style="color:var(--pos)">${encaisse>0?eurRaw(encaisse):'—'}</strong></span>
           ${retardsSit>0?`<span style="color:var(--neg);font-weight:600">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}
         </div>
       </div>
@@ -2096,7 +2152,7 @@ function renderFinance(d,c){
 
     <!-- Avenants -->
     <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <div class="card-title" style="margin:0">Avenants</div>
         <div style="font-size:12px">
           Cumul avenants : <strong style="color:${avCumul>=0?'var(--pos)':'var(--neg)'}">${avCumul!==0?eurRaw(avCumul):'—'}</strong>
@@ -2112,9 +2168,9 @@ function renderFinance(d,c){
       <button class="add-row-btn" data-action="addRow" data-list="avenants">${svgIcon(ico.plus,13)} Ajouter avenant</button>
     </div>
 
-    <!-- RAF -->
+    <!-- RAF (analyse détaillée SAP) -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Reste à faire (RAF)</div>
+      <div class="card-title">Analyse RAF (reste à faire) — par nature de coût</div>
       <div class="param-row" style="margin-bottom:10px">
         <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
