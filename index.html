@@ -363,6 +363,17 @@ body.dark .doc-ico{background:#233043}
 .seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
 .seg button{border:none;background:none;padding:7px 14px;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;color:var(--sub);cursor:pointer;white-space:nowrap}
 .seg button.active{background:var(--acc);color:#fff}
+.type-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 14px;margin-bottom:14px;flex-wrap:wrap}
+.type-bar .tb-label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.4px}
+/* Bannière mode petite */
+.petite-banner{display:flex;align-items:center;gap:12px;background:linear-gradient(90deg,var(--acc),#3d92ff);color:#fff;border-radius:14px;padding:14px 16px;margin-bottom:14px}
+.petite-banner .pb-ic{width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.petite-banner .pb-t{font-size:16px;font-weight:700}
+.petite-banner .pb-s{font-size:12px;opacity:.9}
+/* Tuiles de création par type */
+.add-type{background:var(--card);border:2px dashed var(--border);border-radius:12px;padding:18px 14px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;transition:border-color .15s,background .15s}
+.add-type:hover{border-color:var(--acc);background:var(--bg)}
+.add-type .at-ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center}
 
 /* Floating action button */
 .fab{position:fixed;right:18px;bottom:84px;width:56px;height:56px;border-radius:50%;background:var(--acc);color:#fff;border:none;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:90}
@@ -2837,7 +2848,7 @@ function renderPortfolio(){
         </div>
         <div class="prog-bar"><div class="prog-fill" style="width:${s.avancement}%;background:var(--acc)"></div></div>
       </div>
-      <div style="display:flex;gap:6px;justify-content:flex-end" onclick="event.stopPropagation()">
+      <div style="display:flex;gap:6px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" data-action="dupChantier" data-id="${ch.id}" title="Dupliquer">${svgIcon(ico.copy,13)} Dupliquer</button>
         <button class="btn btn-danger btn-sm" data-action="delChantier" data-id="${ch.id}" title="Supprimer">${svgIcon(ico.trash,13)} Supprimer</button>
       </div>
@@ -2859,27 +2870,32 @@ function renderPortfolio(){
         `).join('')}
       </div>
     </div>
-    <div class="pf-grid">
-      ${cards}
-      <div class="pf-card-add" data-action="addChantierType" data-val="grosse">
-        ${svgIcon(ico.plus,24)}
-        <span style="font-size:13px;font-weight:600">Grosse intervention</span>
-        <span style="font-size:11px;color:var(--sub)">Suivi complet</span>
+    <div class="section-title">Nouveau chantier</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px">
+      <div class="add-type" data-action="addChantierType" data-val="grosse">
+        <div class="at-ic" style="background:#e8f1fd;color:var(--acc)">${svgIcon(ico.dash,24)}</div>
+        <span style="font-size:14px;font-weight:700">🏗️ Grosse intervention</span>
+        <span style="font-size:12px;color:var(--sub)">Suivi complet : finances, planning, cadences, sous-traitants, journal, photos…</span>
       </div>
-      <div class="pf-card-add" data-action="addChantierType" data-val="petite">
-        ${svgIcon(ico.plus,24)}
-        <span style="font-size:13px;font-weight:600">Petite intervention</span>
-        <span style="font-size:11px;color:var(--sub)">Fiche 1 page</span>
+      <div class="add-type" data-action="addChantierType" data-val="petite">
+        <div class="at-ic" style="background:#fff3e0;color:var(--warn)">${svgIcon(ico.cr,24)}</div>
+        <span style="font-size:14px;font-weight:700">⚡ Petite intervention</span>
+        <span style="font-size:12px;color:var(--sub)">Fiche 1 page : fournitures, matériel, main d'œuvre & marge</span>
       </div>
     </div>
+    ${cards?`<div class="section-title">Chantiers</div><div class="pf-grid">${cards}</div>`:`<div style="color:var(--sub);padding:20px;text-align:center">Aucun chantier pour l'instant — créez-en un ci-dessus.</div>`}
   `;
 }
 
 // ─── Petite intervention : fiche 1 page ───────────────────────────────────────
 function typeToggle(d){
-  return`<div class="seg" style="margin-bottom:14px">
-    <button class="${d.type!=='petite'?'active':''}" data-action="setType" data-val="grosse">Grosse intervention</button>
-    <button class="${d.type==='petite'?'active':''}" data-action="setType" data-val="petite">Petite intervention</button>
+  const petite=d.type==='petite';
+  return`<div class="type-bar">
+    <div class="tb-label">${svgIcon(ico.edit,13)} Type d'intervention</div>
+    <div class="seg">
+      <button class="${!petite?'active':''}" data-action="setType" data-val="grosse">${svgIcon(ico.dash,13)} Grosse</button>
+      <button class="${petite?'active':''}" data-action="setType" data-val="petite">${svgIcon(ico.cr,13)} Petite</button>
+    </div>
   </div>`;
 }
 function renderPetite(d){
@@ -2926,9 +2942,12 @@ function renderPetite(d){
 
   return`
     ${typeToggle(d)}
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
-      <h1 class="page-title" style="margin:0">${esc(d.ident.nom||'Petite intervention')}</h1>
-      <span class="badge badge-blue">Fiche intervention</span>
+    <div class="petite-banner">
+      <div class="pb-ic">${svgIcon(ico.cr,20)}</div>
+      <div style="flex:1">
+        <div class="pb-t">${esc(d.ident.nom||'Petite intervention')}</div>
+        <div class="pb-s">Fiche d'intervention rapide · fournitures, matériel, main d'œuvre & marge sur une page</div>
+      </div>
     </div>
 
     <!-- Récap KPI -->
