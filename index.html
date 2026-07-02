@@ -382,6 +382,17 @@ body.dark .doc-ico{background:#233043}
 /* Mobile bottom nav (hidden on desktop) */
 #mobile-nav{display:none}
 .icon-btn{width:34px;height:34px;border-radius:8px;border:none;background:rgba(255,255,255,.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* Compte / profil (bulle avatar) */
+.acc-panel{position:fixed;z-index:210;top:52px;right:12px;width:300px;max-width:calc(100vw - 24px);max-height:calc(100vh - 64px);overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:16px;color:var(--text)}
+.acc-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.acc-avatar{width:44px;height:44px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.acc-name{font-weight:700;font-size:15px}
+.acc-mail{font-size:12px;color:var(--sub)}
+.acc-sec{border-top:1px solid var(--border);margin-top:12px;padding-top:12px}
+.acc-sec-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--sub);margin-bottom:8px}
+.acc-btn{display:flex;align-items:center;gap:8px;width:100%;justify-content:center;margin-top:8px}
+.acc-note{font-size:11px;color:var(--sub);margin-top:8px;line-height:1.4}
 .icon-btn:hover{background:rgba(255,255,255,.22)}
 
 @media(max-width:760px){
@@ -585,8 +596,10 @@ function defaults(){
 const KEY='suivi_chantier_sap_portfolio_v1';
 const KEY_OLD='suivi_chantier_sap_v1';
 const THEME_KEY='suivi_chantier_theme';
+const ACC_KEY='suivi_chantier_account';
 let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
-  taskView:'liste',theme:'light',docQuery:''};
+  taskView:'liste',theme:'light',docQuery:'',
+  account:{name:'',email:'',societe:'',connected:false},accountOpen:false};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
 function setHTab(val){state.hTab=val;render();}
 
@@ -615,6 +628,14 @@ function load(){
     }
   }catch(e){console.warn('load error',e)}
   try{state.theme=localStorage.getItem(THEME_KEY)||'light'}catch(e){}
+  try{const a=JSON.parse(localStorage.getItem(ACC_KEY)||'null');if(a)state.account=Object.assign(state.account,a);}catch(e){}
+}
+function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
+function accountInitials(){
+  const nm=(state.account&&state.account.name||'').trim();
+  if(!nm)return'CA';
+  const parts=nm.split(/\s+/).filter(Boolean);
+  return((parts[0]||'')[0]||'')+((parts[1]||'')[0]||(parts[0]||'')[1]||'');
 }
 
 function save(){
@@ -643,6 +664,38 @@ function toggleTheme(){
   state.theme=state.theme==='dark'?'light':'dark';
   try{localStorage.setItem(THEME_KEY,state.theme)}catch(e){}
   applyTheme();render();
+}
+
+// ── Compte / profil (local) ──
+function toggleAccount(){state.accountOpen=!state.accountOpen;render();}
+function accountLogin(){
+  const name=(document.getElementById('acc-name')||{}).value||'';
+  const email=(document.getElementById('acc-email')||{}).value||'';
+  const societe=(document.getElementById('acc-societe')||{}).value||'';
+  if(!name.trim()&&!email.trim()){alert('Renseignez au moins un nom ou un e-mail.');return;}
+  state.account={name:name.trim(),email:email.trim(),societe:societe.trim(),connected:true};
+  saveAccount();render();
+}
+function accountLogout(){state.account={name:'',email:'',societe:'',connected:false};saveAccount();state.accountOpen=false;render();}
+function accountEdit(){state.account.connected=false;saveAccount();render();}
+
+// Sauvegarde / restauration (substitut de synchro tant qu'il n'y a pas de serveur)
+function exportBackup(){
+  const data=JSON.stringify({app:'suivi-chantier',version:1,exportedAt:new Date().toISOString(),
+    account:state.account,activeId:state.activeId,chantiers:state.chantiers},null,2);
+  const blob=new Blob([data],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
+  a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function importBackupData(parsed){
+  if(!parsed||!Array.isArray(parsed.chantiers)){alert('Fichier de sauvegarde invalide.');return;}
+  if(!confirm('Remplacer les données actuelles par cette sauvegarde ?'))return;
+  state.chantiers=parsed.chantiers.map(ch=>({id:ch.id||('ch'+Date.now()+Math.random().toString(36).slice(2,5)),d:deepMerge(defaults(),ch.d||{})}));
+  state.activeId=parsed.activeId&&state.chantiers.some(c=>c.id===parsed.activeId)?parsed.activeId:(state.chantiers[0]?.id||null);
+  if(parsed.account){state.account=Object.assign({name:'',email:'',societe:'',connected:false},parsed.account);saveAccount();}
+  save();state.accountOpen=false;state.screen='portfolio';render();
+  alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
 
 // Compresse une image (fichier) en dataURL JPEG (max ~1280px) pour tenir dans localStorage
@@ -1104,6 +1157,10 @@ document.addEventListener('change',e=>{
 });
 
 document.addEventListener('click',e=>{
+  // Fermer le panneau compte si clic en dehors (hors avatar et hors panneau)
+  if(state.accountOpen&&!e.target.closest('.acc-panel')&&!e.target.closest('#avatar-btn')){
+    state.accountOpen=false;render();return;
+  }
   const btn=e.target.closest('[data-action]');
   if(btn){
     const action=btn.dataset.action;
@@ -1139,6 +1196,12 @@ document.addEventListener('click',e=>{
       if(row)row.style.display=row.style.display==='none'?'table-row':'none';
       return;
     }
+    // ── Compte / profil ──
+    if(action==='toggleAccount'){toggleAccount();return;}
+    if(action==='accountLogin'){accountLogin();return;}
+    if(action==='accountLogout'){accountLogout();return;}
+    if(action==='accountEdit'){accountEdit();return;}
+    if(action==='exportBackup'){exportBackup();return;}
     // ── Field / mobile actions ──
     if(action==='toggleTheme'){toggleTheme();return;}
     if(action==='addJournalToday'){e.preventDefault();addJournalToday();return;}
@@ -1177,6 +1240,12 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',async e=>{
   const inp=e.target;
   if(!inp||inp.tagName!=='INPUT'||inp.type!=='file'||!inp.files||!inp.files.length)return;
+  // Import d'une sauvegarde (pas besoin de chantier actif)
+  if(inp.dataset.importBackup!==undefined){
+    try{const txt=await inp.files[0].text();importBackupData(JSON.parse(txt));}
+    catch(err){console.warn(err);alert('Fichier illisible ou invalide.');}
+    inp.value='';return;
+  }
   const ch=getActive();if(!ch)return;const d=ch.d;
   const jrId=inp.dataset.photoJournal;
   const isDoc=inp.dataset.docNew!==undefined;
@@ -2762,8 +2831,43 @@ function renderShell(){
       ${svgIcon(ico.bell,18)}
       ${(ch&&summarize(ch.d).alertCount>0)?'<span class="notif-dot"></span>':''}
     </button>
-    <div class="avatar" title="Mon compte">CA</div>
+    <div class="avatar" id="avatar-btn" data-action="toggleAccount" title="Mon compte">${accountInitials()}</div>
+    ${state.accountOpen?accountPanel():''}
   `;
+}
+
+function accountPanel(){
+  const a=state.account||{};
+  const connected=a.connected;
+  const body=connected
+    ?`<div class="acc-head">
+        <div class="acc-avatar">${accountInitials()}</div>
+        <div style="min-width:0">
+          <div class="acc-name">${esc(a.name||'Utilisateur')}</div>
+          ${a.email?`<div class="acc-mail">${esc(a.email)}</div>`:''}
+          ${a.societe?`<div class="acc-mail">${esc(a.societe)}</div>`:''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" data-action="accountEdit">${svgIcon(ico.edit,13)} Modifier</button>
+        <button class="btn btn-danger btn-sm" style="flex:1" data-action="accountLogout">Déconnexion</button>
+      </div>`
+    :`<div class="acc-sec-t" style="margin-bottom:10px">Se connecter à mon compte</div>
+      <div class="form-field" style="margin-bottom:8px"><label class="form-label">Nom</label><input id="acc-name" class="form-input" type="text" value="${esc(a.name||'')}" placeholder="Prénom Nom"></div>
+      <div class="form-field" style="margin-bottom:8px"><label class="form-label">E-mail</label><input id="acc-email" class="form-input" type="email" value="${esc(a.email||'')}" placeholder="vous@entreprise.fr"></div>
+      <div class="form-field" style="margin-bottom:4px"><label class="form-label">Société</label><input id="acc-societe" class="form-input" type="text" value="${esc(a.societe||'')}" placeholder="Entreprise"></div>
+      <button class="btn btn-primary acc-btn" data-action="accountLogin">${svgIcon(ico.st,14)} Se connecter</button>
+      <div class="acc-note">Profil enregistré sur cet appareil. La connexion à un compte cloud (synchronisation multi-appareils) arrivera avec le serveur — en attendant, utilisez la sauvegarde ci-dessous.</div>`;
+  return`<div class="acc-panel">
+      ${body}
+      <div class="acc-sec">
+        <div class="acc-sec-t">Données & sauvegarde</div>
+        <button class="btn btn-ghost btn-sm acc-btn" data-action="exportBackup">${svgIcon(ico.pdf,13)} Exporter la sauvegarde (.json)</button>
+        <label class="btn btn-ghost btn-sm acc-btn" style="cursor:pointer">${svgIcon(ico.folder,13)} Importer une sauvegarde
+          <input type="file" accept="application/json,.json" data-import-backup style="display:none"></label>
+        <div class="acc-note">Exportez pour sauvegarder ou transférer vos chantiers vers un autre appareil, puis importez le fichier.</div>
+      </div>
+    </div>`;
 }
 
 const NAV_ITEMS=[
