@@ -359,6 +359,18 @@ body.dark .doc-ico{background:#233043}
 .jr-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .jr-field.full{grid-column:1/-1}
 
+/* Hub de sélection (Chantiers / CRM / Devis) */
+.hub-wrap{max-width:940px;margin:0 auto;padding-top:5vh}
+.hub-hello{font-size:22px;font-weight:800;margin-bottom:4px}
+.hub-sub{font-size:13px;color:var(--sub);margin-bottom:24px}
+.hub-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.hub-card{background:var(--card);border-radius:18px;padding:24px 20px;cursor:pointer;box-shadow:var(--card-sh);border:2px solid transparent;transition:border-color .15s,transform .12s,box-shadow .15s;display:flex;flex-direction:column;gap:10px}
+.hub-card:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.14)}
+.hub-ic{width:54px;height:54px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.hub-name{font-size:17px;font-weight:800}
+.hub-desc{font-size:12px;color:var(--sub);line-height:1.45;flex:1}
+.hub-stat{font-size:12px;font-weight:700;color:var(--acc)}
+
 /* Segmented control (type d'intervention) */
 .seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
 .seg button{border:none;background:none;padding:7px 14px;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;color:var(--sub);cursor:pointer;white-space:nowrap}
@@ -502,6 +514,9 @@ const ico={
   cal:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   spark:'<path d="M12 2l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
   edit:'<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
+  apps:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><line x1="17.5" y1="14" x2="17.5" y2="21"/><line x1="14" y1="17.5" x2="21" y2="17.5"/>',
+  crm:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  devis:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/><line x1="9" y1="9" x2="10" y2="9"/>',
 };
 
 // ─── Data defaults ────────────────────────────────────────────────────────────
@@ -597,9 +612,13 @@ const KEY='suivi_chantier_sap_portfolio_v1';
 const KEY_OLD='suivi_chantier_sap_v1';
 const THEME_KEY='suivi_chantier_theme';
 const ACC_KEY='suivi_chantier_account';
-let state={screen:'portfolio',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
+const CRM_KEY='suivi_chantier_crm_v1';
+const DEVIS_KEY='suivi_chantier_devis_v1';
+let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
-  account:{name:'',email:'',societe:'',connected:false},accountOpen:false};
+  account:{name:'',email:'',societe:'',connected:false},accountOpen:false,
+  crmData:{contacts:[]},crmQuery:'',
+  devisData:{list:[]},devisId:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
 function setHTab(val){state.hTab=val;render();}
 
@@ -629,8 +648,26 @@ function load(){
   }catch(e){console.warn('load error',e)}
   try{state.theme=localStorage.getItem(THEME_KEY)||'light'}catch(e){}
   try{const a=JSON.parse(localStorage.getItem(ACC_KEY)||'null');if(a)state.account=Object.assign(state.account,a);}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem(CRM_KEY)||'null');if(c&&Array.isArray(c.contacts))state.crmData=c;}catch(e){}
+  try{const v=JSON.parse(localStorage.getItem(DEVIS_KEY)||'null');if(v&&Array.isArray(v.list))state.devisData=v;}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
+function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData))}catch(e){}}
+function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.devisData))}catch(e){}}
+
+// Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
+function setGlobalD(path,value){
+  const parts=path.split('.');
+  const root=parts.shift(); // 'crm' | 'devis'
+  let obj=root==='crm'?state.crmData:state.devisData;
+  for(let i=0;i<parts.length-1;i++){
+    const k=parts[i];const nk=parts[i+1];
+    if(obj[k]===undefined||obj[k]===null)obj[k]=/^\d+$/.test(nk)?[]:{};
+    obj=obj[k];
+  }
+  obj[parts[parts.length-1]]=value;
+  if(root==='crm')saveCrm();else saveDevis();
+}
 function accountInitials(){
   const nm=(state.account&&state.account.name||'').trim();
   if(!nm)return'CA';
@@ -681,8 +718,9 @@ function accountEdit(){state.account.connected=false;saveAccount();render();}
 
 // Sauvegarde / restauration (substitut de synchro tant qu'il n'y a pas de serveur)
 function exportBackup(){
-  const data=JSON.stringify({app:'suivi-chantier',version:1,exportedAt:new Date().toISOString(),
-    account:state.account,activeId:state.activeId,chantiers:state.chantiers},null,2);
+  const data=JSON.stringify({app:'suivi-chantier',version:2,exportedAt:new Date().toISOString(),
+    account:state.account,activeId:state.activeId,chantiers:state.chantiers,
+    crm:state.crmData,devis:state.devisData},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
@@ -694,7 +732,9 @@ function importBackupData(parsed){
   state.chantiers=parsed.chantiers.map(ch=>({id:ch.id||('ch'+Date.now()+Math.random().toString(36).slice(2,5)),d:deepMerge(defaults(),ch.d||{})}));
   state.activeId=parsed.activeId&&state.chantiers.some(c=>c.id===parsed.activeId)?parsed.activeId:(state.chantiers[0]?.id||null);
   if(parsed.account){state.account=Object.assign({name:'',email:'',societe:'',connected:false},parsed.account);saveAccount();}
-  save();state.accountOpen=false;state.screen='portfolio';render();
+  if(parsed.crm&&Array.isArray(parsed.crm.contacts)){state.crmData=parsed.crm;saveCrm();}
+  if(parsed.devis&&Array.isArray(parsed.devis.list)){state.devisData=parsed.devis;saveDevis();}
+  save();state.accountOpen=false;state.screen='hub';render();
   alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
 
@@ -1127,8 +1167,13 @@ function computeAll(d){
 document.addEventListener('change',e=>{
   const t=e.target;
   const name=t.name;
-  if(!name||!getActive())return;
+  if(!name)return;
   const val=t.type==='checkbox'?t.checked:t.value;
+  // Champs des stores globaux (CRM / Devis) — indépendants du chantier actif
+  if(name.startsWith('crm.')||name.startsWith('devis.')){
+    setGlobalD(name,val);render();return;
+  }
+  if(!getActive())return;
   setD(name,val);
   // TS: si statut = Refusé → montant accordé = 0
   if(name.match(/^ts\.\d+\.statut$/)&&val==='Refusé'){
@@ -1175,6 +1220,7 @@ document.addEventListener('click',e=>{
       render();return;
     }
     if(action==='goPortfolio'){state.screen='portfolio';render();return;}
+    if(action==='goHub'){state.screen='hub';state.devisId=null;render();return;}
     if(action==='openChantier'){state.activeId=id;state.screen='home';save();render();return;}
     if(action==='addChantier'){newChantier();state.screen='home';render();return;}
     if(action==='addChantierType'){newChantier(val);state.screen='home';render();return;}
@@ -1196,6 +1242,50 @@ document.addEventListener('click',e=>{
       if(row)row.style.display=row.style.display==='none'?'table-row':'none';
       return;
     }
+    // ── CRM ──
+    if(action==='crmQuickAdd'){crmQaSubmit();return;}
+    if(action==='delContact'){
+      if(confirm('Supprimer ce contact ?')){state.crmData.contacts=state.crmData.contacts.filter(c=>c.id!==id);saveCrm();render();}
+      return;
+    }
+    if(action==='devisFromContact'){
+      const ct=state.crmData.contacts.find(c=>c.id===id);
+      newDevis(ct?ct.nom+(ct.societe?' ('+ct.societe+')':''):'');
+      return;
+    }
+    // ── Devis ──
+    if(action==='addDevis'){newDevis();return;}
+    if(action==='openDevis'){state.devisId=id;render();return;}
+    if(action==='closeDevis'){state.devisId=null;render();return;}
+    if(action==='delDevis'){
+      if(confirm('Supprimer ce devis ?')){
+        state.devisData.list=state.devisData.list.filter(d=>d.id!==id);
+        if(state.devisId===id)state.devisId=null;
+        saveDevis();render();
+      }
+      return;
+    }
+    if(action==='dupDevis'){
+      const src=state.devisData.list.find(d=>d.id===id);
+      if(src){
+        const cp=JSON.parse(JSON.stringify(src));
+        cp.id='dv'+Date.now();cp.num=src.num+'-copie';cp.statut='Brouillon';cp.date=todayISO();
+        state.devisData.list.unshift(cp);saveDevis();render();
+      }
+      return;
+    }
+    if(action==='addDevisLigne'){
+      const dv=state.devisData.list.find(d=>d.id===state.devisId);
+      if(dv){dv.lignes.push({designation:'',qte:'',unite:'',pu:'',tva:'20'});saveDevis();render();}
+      return;
+    }
+    if(action==='delDevisLigne'){
+      const dv=state.devisData.list.find(d=>d.id===state.devisId);
+      if(dv){dv.lignes.splice(idx,1);saveDevis();render();}
+      return;
+    }
+    if(action==='exportDevis'){exportDevisPdf(id);return;}
+    if(action==='devisToChantier'){devisToChantier(id);return;}
     // ── Compte / profil ──
     if(action==='toggleAccount'){toggleAccount();return;}
     if(action==='accountLogin'){accountLogin();return;}
@@ -1219,6 +1309,7 @@ document.addEventListener('click',e=>{
     if(action==='exportSynthese'){exportSynthesePdf();return;}
     if(action==='fabTasks'){const i=document.getElementById('qa-input');if(i){window.scrollTo(0,0);i.focus();}return;}
     if(action==='fabPhoto'){const i=document.querySelector('[data-photo-new]');if(i)i.click();return;}
+    if(action==='fabCrm'){const i=document.getElementById('crm-qa');if(i){window.scrollTo(0,0);i.focus();}return;}
     return;
   }
 
@@ -2711,6 +2802,272 @@ function exportSynthesePdf(){
   openPrint('Synthèse chantier',body);
 }
 
+// ═══════════ Hub de sélection (Chantiers / CRM / Devis) ═══════════
+function renderHub(){
+  const nbCh=state.chantiers.length;
+  const nbCt=state.crmData.contacts.filter(c=>c.nom).length;
+  const dvs=state.devisData.list;
+  const dvTot=dvs.reduce((s,d)=>s+devisTotals(d).ht,0);
+  const hello=state.account.connected&&state.account.name?`Bonjour ${esc(state.account.name.split(' ')[0])} 👋`:'Bienvenue 👋';
+  const card=(screen,icon,color,bg,name,desc,stat)=>`
+    <div class="hub-card" data-screen="${screen}">
+      <div class="hub-ic" style="background:${bg};color:${color}">${svgIcon(icon,26)}</div>
+      <div class="hub-name">${name}</div>
+      <div class="hub-desc">${desc}</div>
+      <div class="hub-stat">${stat} →</div>
+    </div>`;
+  return`
+    <div class="hub-wrap">
+      <div class="hub-hello">${hello}</div>
+      <div class="hub-sub">Que voulez-vous faire aujourd'hui ?</div>
+      <div class="hub-grid">
+        ${card('portfolio',ico.brief,'var(--acc)','#e8f1fd','Suivi de chantier',
+          'Portefeuille de chantiers : finances, planning, heures, sous-traitants, journal, photos, documents…',
+          nbCh?nbCh+' chantier'+(nbCh>1?'s':''):'Commencer')}
+        ${card('crm',ico.crm,'#107e3e','#e8f5e9','Mon CRM',
+          'Clients, prospects et contacts : coordonnées, statut de la relation, relances et notes.',
+          nbCt?nbCt+' contact'+(nbCt>1?'s':''):'Ajouter un contact')}
+        ${card('devis',ico.devis,'#e76500','#fff3e0','Création de devis',
+          'Rédigez vos devis (lignes, TVA, totaux), exportez en PDF et transformez-les en intervention.',
+          dvs.length?dvs.length+' devis · '+eurRaw(dvTot)+' HT':'Créer un devis')}
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════ CRM ═══════════
+const CRM_TYPES=['Prospect','Client','MOE / Archi','Fournisseur','Autre'];
+const CRM_STATUTS=['À contacter','Relancé','Devis envoyé','Client actif','Sans suite'];
+function crmStatutClass(s){
+  if(s==='Client actif')return'st-termine';
+  if(s==='Devis envoyé')return'st-encours';
+  if(s==='Sans suite')return'st-bloque';
+  return'st-afaire';
+}
+function addContact(nom){
+  state.crmData.contacts.unshift({id:'ct'+Date.now(),nom:(nom||'').trim(),societe:'',tel:'',email:'',
+    type:'Prospect',statut:'À contacter',dernierContact:todayISO(),notes:''});
+  saveCrm();render();
+}
+function crmQaSubmit(){const i=document.getElementById('crm-qa');if(i&&i.value.trim())addContact(i.value);}
+
+function renderCRM(){
+  const q=(state.crmQuery||'').toLowerCase();
+  const all=state.crmData.contacts;
+  const list=all.map((ct,i)=>({ct,i})).filter(({ct})=>!q||`${ct.nom} ${ct.societe} ${ct.email} ${ct.tel}`.toLowerCase().includes(q));
+  const kpis=[
+    ['Contacts',all.filter(c=>c.nom).length,'var(--text)'],
+    ['Prospects',all.filter(c=>c.type==='Prospect').length,'var(--acc)'],
+    ['Clients actifs',all.filter(c=>c.statut==='Client actif').length,'var(--pos)'],
+    ['À relancer',all.filter(c=>c.statut==='À contacter'||c.statut==='Relancé').length,'var(--warn)'],
+  ];
+  const cards=list.map(({ct,i})=>`
+    <div class="ck-card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="acc-avatar" style="width:38px;height:38px;font-size:13px;background:${ct.type==='Client'||ct.statut==='Client actif'?'var(--pos)':'var(--acc)'}">${esc((ct.nom||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()||'?')}</div>
+        <input type="text" name="crm.contacts.${i}.nom" value="${esc(ct.nom)}" placeholder="Nom du contact" style="flex:1;font-weight:700;font-size:15px;border:none;background:transparent;min-width:0">
+        <span class="pill ${crmStatutClass(ct.statut)}">${esc(ct.statut)}</span>
+        <button class="btn btn-danger btn-icon btn-sm" data-action="delContact" data-id="${ct.id}">${svgIcon(ico.trash,13)}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-field"><label class="form-label">Société</label><input class="form-input" type="text" name="crm.contacts.${i}.societe" value="${esc(ct.societe)}"></div>
+        <div class="form-field"><label class="form-label">Type</label><select class="form-select" name="crm.contacts.${i}.type">${CRM_TYPES.map(v=>`<option${ct.type===v?' selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="form-field"><label class="form-label">Téléphone</label><input class="form-input" type="tel" name="crm.contacts.${i}.tel" value="${esc(ct.tel)}"></div>
+        <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="crm.contacts.${i}.email" value="${esc(ct.email)}"></div>
+        <div class="form-field"><label class="form-label">Statut relation</label><select class="form-select" name="crm.contacts.${i}.statut">${CRM_STATUTS.map(v=>`<option${ct.statut===v?' selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="form-field"><label class="form-label">Dernier contact</label><input class="form-input" type="date" name="crm.contacts.${i}.dernierContact" value="${ct.dernierContact||''}"></div>
+        <div class="form-field" style="grid-column:1/-1"><label class="form-label">Notes</label><input class="form-input" type="text" name="crm.contacts.${i}.notes" value="${esc(ct.notes)}" placeholder="Historique, besoins, relance prévue…"></div>
+      </div>
+      ${(ct.tel||ct.email)?`<div style="display:flex;gap:8px;margin-top:10px">
+        ${ct.tel?`<a class="btn btn-ghost btn-sm" href="tel:${esc(ct.tel)}" style="text-decoration:none">📞 Appeler</a>`:''}
+        ${ct.email?`<a class="btn btn-ghost btn-sm" href="mailto:${esc(ct.email)}" style="text-decoration:none">✉️ E-mail</a>`:''}
+        <button class="btn btn-ghost btn-sm" data-action="devisFromContact" data-id="${ct.id}">${svgIcon(ico.devis,13)} Devis</button>
+      </div>`:''}
+    </div>`).join('');
+  return`
+    <h1 class="page-title">Mon CRM</h1>
+    <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
+      ${kpis.map(([l,v,col])=>`<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value" style="color:${col}">${v}</div></div>`).join('')}
+    </div>
+    <div class="quick-add">
+      <input id="crm-qa" class="qa-main" type="text" placeholder="Nouveau contact… (Entrée = ajouter)" onkeydown="if(event.key==='Enter'){event.preventDefault();crmQaSubmit();}">
+      <button class="btn btn-primary" data-action="crmQuickAdd">${svgIcon(ico.plus,14)} Ajouter</button>
+    </div>
+    <div style="position:relative;margin-bottom:14px">
+      ${svgIcon(ico.search,15,'style="position:absolute;left:10px;top:11px;color:var(--sub)"')}
+      <input class="form-input" type="text" id="crm-search" placeholder="Rechercher (nom, société, e-mail…)" value="${esc(state.crmQuery)}" style="padding-left:32px">
+    </div>
+    ${all.length===0?`<div class="ck-card" style="text-align:center;color:var(--sub);padding:30px">Aucun contact. Ajoutez votre premier client ou prospect ci-dessus.</div>`
+      :(cards||'<div style="color:var(--sub);padding:20px;text-align:center">Aucun résultat.</div>')}
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px"></div>
+  `;
+}
+
+// ═══════════ Devis ═══════════
+const DEVIS_STATUTS=['Brouillon','Envoyé','Accepté','Refusé'];
+function devisStatutBadge(s){
+  if(s==='Accepté')return'badge-green';
+  if(s==='Refusé')return'badge-red';
+  if(s==='Envoyé')return'badge-blue';
+  return'badge-grey';
+}
+function devisTotals(dv){
+  let ht=0,tva=0;
+  (dv.lignes||[]).forEach(l=>{
+    const base=n(l.qte)*n(l.pu);
+    ht+=base;tva+=base*n(l.tva)/100;
+  });
+  return{ht,tva,ttc:ht+tva};
+}
+function newDevis(client){
+  const yr=new Date().getFullYear();
+  const num='DEV-'+yr+'-'+String(state.devisData.list.length+1).padStart(3,'0');
+  const dv={id:'dv'+Date.now(),num,client:client||'',date:todayISO(),validite:'30',statut:'Brouillon',notes:'',
+    lignes:Array.from({length:4},()=>({designation:'',qte:'',unite:'',pu:'',tva:'20'}))};
+  state.devisData.list.unshift(dv);
+  state.devisId=dv.id;
+  saveDevis();
+  state.screen='devis';render();
+}
+function devisToChantier(id){
+  const dv=state.devisData.list.find(x=>x.id===id);if(!dv)return;
+  if(!confirm('Créer une petite intervention à partir de ce devis ?'))return;
+  const t=devisTotals(dv);
+  const ch=newChantier('petite');
+  ch.d.ident.nom=(dv.client?dv.client+' — ':'')+dv.num;
+  ch.d.petite.client=dv.client||'';
+  ch.d.petite.montant=String(Math.round(t.ht));
+  const lignes=(dv.lignes||[]).filter(l=>l.designation).map(l=>({designation:l.designation,qte:l.qte,pu:l.pu}));
+  while(lignes.length<3)lignes.push({designation:'',qte:'',pu:''});
+  ch.d.petite.fournitures=lignes;
+  dv.statut='Accepté';
+  save();saveDevis();
+  state.devisId=null;state.screen='home';render();
+}
+function exportDevisPdf(id){
+  const dv=state.devisData.list.find(x=>x.id===id);if(!dv)return;
+  const t=devisTotals(dv);
+  const a=state.account||{};
+  const lignes=(dv.lignes||[]).filter(l=>l.designation);
+  const body=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px">
+      <div>
+        <h1 style="color:#0070f2">DEVIS ${esc(dv.num)}</h1>
+        <div class="muted">Date : ${fmtDateFR(dv.date)} · Validité : ${esc(dv.validite||'30')} jours</div>
+      </div>
+      <div style="text-align:right">
+        <strong>${esc(a.societe||a.name||'Votre entreprise')}</strong><br>
+        <span class="muted">${esc(a.name||'')}${a.email?'<br>'+esc(a.email):''}</span>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:14px"><div class="label">Client</div><div class="block">${esc(dv.client||'—')}</div></div>
+    <table><thead><tr><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>TVA</th><th>Total HT</th></tr></thead><tbody>
+    ${lignes.map(l=>`<tr><td>${esc(l.designation)}</td><td>${esc(l.qte)}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td><td>${eurRaw(n(l.qte)*n(l.pu))}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Aucune ligne</td></tr>'}
+    </tbody></table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <table style="width:280px">
+        <tr><td>Total HT</td><td style="text-align:right"><strong>${eurRaw(t.ht)}</strong></td></tr>
+        <tr><td>TVA</td><td style="text-align:right">${eurRaw(t.tva)}</td></tr>
+        <tr><td><strong>Total TTC</strong></td><td style="text-align:right"><strong style="color:#0070f2">${eurRaw(t.ttc)}</strong></td></tr>
+      </table>
+    </div>
+    ${dv.notes?`<h2>Conditions & remarques</h2><div class="block">${esc(dv.notes)}</div>`:''}
+    <div style="margin-top:34px;display:flex;gap:40px">
+      <div style="flex:1"><div class="muted">Fait le ${fmtDateFR(todayISO())}</div></div>
+      <div style="flex:1;border:1px solid #ccc;border-radius:8px;padding:10px;min-height:90px"><span class="muted">Bon pour accord — date et signature du client :</span></div>
+    </div>`;
+  openPrint('Devis '+dv.num,body);
+}
+
+function renderDevis(){
+  const list=state.devisData.list;
+  // ── Éditeur ──
+  const idx=list.findIndex(x=>x.id===state.devisId);
+  if(idx>=0){
+    const dv=list[idx];
+    const t=devisTotals(dv);
+    const clientOpts=state.crmData.contacts.filter(c=>c.nom).map(c=>`<option value="${esc(c.nom+(c.societe?' ('+c.societe+')':''))}">`).join('');
+    const ligneRows=(dv.lignes||[]).map((l,j)=>`<tr>
+      <td><input type="text" name="devis.list.${idx}.lignes.${j}.designation" value="${esc(l.designation)}" style="min-width:170px;width:100%" placeholder="Prestation / fourniture"></td>
+      <td><input type="number" name="devis.list.${idx}.lignes.${j}.qte" value="${l.qte||''}" style="width:58px" placeholder="0"></td>
+      <td><input type="text" name="devis.list.${idx}.lignes.${j}.unite" value="${esc(l.unite)}" style="width:52px" placeholder="u"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="devis.list.${idx}.lignes.${j}.pu" value="${l.pu||''}" style="width:80px" placeholder="0"></div></td>
+      <td><input type="number" name="devis.list.${idx}.lignes.${j}.tva" value="${l.tva||'20'}" style="width:48px"> %</td>
+      <td class="auto" style="font-weight:600">${n(l.qte)*n(l.pu)>0?eurRaw(n(l.qte)*n(l.pu)):'—'}</td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delDevisLigne" data-idx="${j}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`).join('');
+    return`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" data-action="closeDevis">← Tous les devis</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" data-action="exportDevis" data-id="${dv.id}">${svgIcon(ico.pdf,13)} PDF</button>
+          <button class="btn btn-primary btn-sm" data-action="devisToChantier" data-id="${dv.id}">${svgIcon(ico.plan,13)} Créer l'intervention</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
+          <div class="form-field"><label class="form-label">N° devis</label><input class="form-input" type="text" name="devis.list.${idx}.num" value="${esc(dv.num)}"></div>
+          <div class="form-field" style="grid-column:span 2"><label class="form-label">Client</label>
+            <input class="form-input" type="text" name="devis.list.${idx}.client" value="${esc(dv.client)}" list="crm-clients" placeholder="Choisir dans le CRM ou saisir…">
+            <datalist id="crm-clients">${clientOpts}</datalist></div>
+          <div class="form-field"><label class="form-label">Date</label><input class="form-input" type="date" name="devis.list.${idx}.date" value="${dv.date||''}"></div>
+          <div class="form-field"><label class="form-label">Validité (jours)</label><input class="form-input" type="number" name="devis.list.${idx}.validite" value="${dv.validite||'30'}"></div>
+          <div class="form-field"><label class="form-label">Statut</label><select class="form-select" name="devis.list.${idx}.statut">${DEVIS_STATUTS.map(v=>`<option${dv.statut===v?' selected':''}>${v}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title">Lignes du devis</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>TVA</th><th>Total HT</th><th></th></tr></thead>
+            <tbody>${ligneRows}</tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" data-action="addDevisLigne">${svgIcon(ico.plus,13)} Ajouter une ligne</button>
+      </div>
+      <div class="ck-card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px"><span style="color:var(--sub)">Total HT</span><strong>${eurRaw(t.ht)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;border-bottom:1px solid var(--border)"><span style="color:var(--sub)">TVA</span><span>${eurRaw(t.tva)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0 2px;font-size:17px"><strong>Total TTC</strong><strong style="color:var(--acc)">${eurRaw(t.ttc)}</strong></div>
+      </div>
+      <div class="card">
+        <div class="form-field"><label class="form-label">Conditions & remarques (affichées sur le PDF)</label>
+        <textarea class="form-textarea" name="devis.list.${idx}.notes" placeholder="Acompte, délais, exclusions…">${esc(dv.notes)}</textarea></div>
+      </div>
+    `;
+  }
+  // ── Liste ──
+  const cards=list.map(dv=>{
+    const t=devisTotals(dv);
+    return`<div class="doc-row" style="cursor:pointer" data-action="openDevis" data-id="${dv.id}">
+      <div class="doc-ico">${svgIcon(ico.devis,18)}</div>
+      <div class="doc-info">
+        <div class="doc-name">${esc(dv.num)}${dv.client?' · '+esc(dv.client):''}</div>
+        <div class="doc-meta">${fmtDateFR(dv.date)} · ${t.ttc>0?eurRaw(t.ttc)+' TTC':'vide'}</div>
+      </div>
+      <span class="badge ${devisStatutBadge(dv.statut)}">${esc(dv.statut)}</span>
+      <button class="btn btn-ghost btn-icon btn-sm" data-action="exportDevis" data-id="${dv.id}" title="PDF">${svgIcon(ico.pdf,13)}</button>
+      <button class="btn btn-ghost btn-icon btn-sm" data-action="dupDevis" data-id="${dv.id}" title="Dupliquer">${svgIcon(ico.copy,13)}</button>
+      <button class="btn btn-danger btn-icon btn-sm" data-action="delDevis" data-id="${dv.id}">${svgIcon(ico.trash,13)}</button>
+    </div>`;
+  }).join('');
+  const totHT=list.reduce((s,d)=>s+devisTotals(d).ht,0);
+  const acceptes=list.filter(d=>d.statut==='Accepté');
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">Devis</h1>
+      <button class="btn btn-primary" data-action="addDevis">${svgIcon(ico.plus,14)} Nouveau devis</button>
+    </div>
+    <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Devis</div><div class="kpi-value">${list.length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Montant total HT</div><div class="kpi-value" style="font-size:16px">${totHT>0?eurRaw(totHT):'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Acceptés</div><div class="kpi-value" style="color:var(--pos)">${acceptes.length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">En attente</div><div class="kpi-value" style="color:var(--warn)">${list.filter(d=>d.statut==='Envoyé').length}</div></div>
+    </div>
+    ${cards||`<div class="ck-card" style="text-align:center;color:var(--sub);padding:30px">Aucun devis. Cliquez « Nouveau devis » pour commencer.</div>`}
+  `;
+}
+
 // ═══════════ Mobile nav & FAB ═══════════
 const MOBILE_NAV=[
   {screen:'home',icon:ico.home,label:'Accueil'},
@@ -2721,9 +3078,16 @@ const MOBILE_NAV=[
 ];
 function renderMobileNav(){
   const el=document.getElementById('mobile-nav');if(!el)return;
+  // Hub : page de sélection plein écran, pas de barre
+  if(state.screen==='hub'){el.innerHTML='';return;}
+  // Écrans applications : barre Menu / Chantiers / CRM / Devis
+  if(['portfolio','crm','devis'].includes(state.screen)){
+    el.innerHTML=APPS_NAV.map(it=>`<button class="${state.screen===it.screen?'active':''}" data-screen="${it.screen}">${svgIcon(it.icon,22)}<span>${it.label}</span></button>`).join('');
+    return;
+  }
   const ch=getActive();
-  // Portfolio ou petite intervention (fiche 1 page) : pas de barre modules
-  if(state.screen==='portfolio'||!ch||ch.d.type==='petite'){el.innerHTML='';return;}
+  // Petite intervention (fiche 1 page) : pas de barre modules
+  if(!ch||ch.d.type==='petite'){el.innerHTML='';return;}
   el.innerHTML=MOBILE_NAV.map(it=>`<button class="${state.screen===it.screen?'active':''}" data-screen="${it.screen}">${svgIcon(it.icon,22)}<span>${it.label}</span></button>`).join('');
 }
 function renderFab(){
@@ -2732,6 +3096,8 @@ function renderFab(){
   if(state.screen==='journal'){act='addJournalToday';}
   else if(state.screen==='tasks'){act='fabTasks';}
   else if(state.screen==='photos'){act='fabPhoto';icon=ico.camera;}
+  else if(state.screen==='crm'){act='fabCrm';}
+  else if(state.screen==='devis'&&!state.devisId){act='addDevis';}
   else{slot.innerHTML='';return;}
   slot.innerHTML=`<button class="fab" data-action="${act}" title="Ajouter">${svgIcon(icon,24)}</button>`;
 }
@@ -2757,6 +3123,19 @@ function renderMain(){
   renderMobileNav();
   const main=document.getElementById('main');
   const ch=getActive();
+  // Applications globales (indépendantes d'un chantier actif)
+  if(state.screen==='hub'){main.innerHTML=renderHub();renderFab();return;}
+  if(state.screen==='crm'){
+    main.innerHTML=renderCRM();
+    const cs=document.getElementById('crm-search');
+    if(cs)cs.addEventListener('input',e=>{
+      state.crmQuery=e.target.value;render();
+      const el=document.getElementById('crm-search');
+      if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}
+    });
+    renderFab();return;
+  }
+  if(state.screen==='devis'){main.innerHTML=renderDevis();renderFab();return;}
   if(state.screen==='portfolio'){
     main.innerHTML=renderPortfolio();
     const pfs=document.getElementById('pf-search');
@@ -2814,15 +3193,16 @@ function renderMain(){
 // ─── Shell & Nav renderers ────────────────────────────────────────────────────
 function renderShell(){
   const ch=getActive();
+  const appMode=['hub','crm','devis'].includes(state.screen);
   const chOptions=state.chantiers.map(c=>`<option value="${c.id}"${c.id===state.activeId?' selected':''}>${esc(c.d.ident.nom||'Sans nom')}</option>`).join('');
   document.getElementById('shell').innerHTML=`
-    <button class="logo-btn" data-action="goHome" title="Accueil">SC</button>
+    <button class="logo-btn" data-action="goHub" title="Menu principal">SC</button>
     <button class="pf-btn" data-action="goPortfolio">
-      ${svgIcon(ico.brief,14)} Portefeuille
+      ${svgIcon(ico.brief,14)} Chantiers
     </button>
     <div class="divider"></div>
-    ${state.chantiers.length>0?`<select id="chantier-sw">${chOptions}</select>`:''}
-    <input class="shell-search" type="text" placeholder="Rechercher…" id="shell-search">
+    ${!appMode&&state.chantiers.length>0?`<select id="chantier-sw">${chOptions}</select>`:''}
+    ${appMode?'':'<input class="shell-search" type="text" placeholder="Rechercher…" id="shell-search">'}
     <div class="spacer"></div>
     <button class="icon-btn" data-action="toggleTheme" title="${state.theme==='dark'?'Mode clair':'Mode sombre'}">
       ${svgIcon(state.theme==='dark'?ico.sun:ico.moon,18)}
@@ -2870,7 +3250,16 @@ function accountPanel(){
     </div>`;
 }
 
+// Rail « applications » (hub, chantiers, CRM, devis)
+const APPS_NAV=[
+  {screen:'hub',icon:ico.apps,label:'Menu'},
+  {screen:'portfolio',icon:ico.brief,label:'Chantiers'},
+  {screen:'crm',icon:ico.crm,label:'CRM'},
+  {screen:'devis',icon:ico.devis,label:'Devis'},
+];
+
 const NAV_ITEMS=[
+  {id:'hub',icon:ico.apps,label:'Menu',screen:'hub'},
   {id:'portfolio',icon:ico.brief,label:'Portfolio',screen:'portfolio'},
   {id:'home',icon:ico.home,label:'Accueil',screen:'home'},
   {sep:true},
@@ -2893,12 +3282,20 @@ const NAV_ITEMS=[
 ];
 
 function renderNav(){
+  const rail=document.getElementById('nav-rail');
+  // Écrans « applications » : rail simplifié Menu / Chantiers / CRM / Devis
+  if(['hub','crm','devis','portfolio'].includes(state.screen)){
+    rail.innerHTML=APPS_NAV.map(item=>`<button class="nav-item${state.screen===item.screen?' active':''}" data-screen="${item.screen}" title="${item.label}">
+      ${svgIcon(item.icon,18)}<span class="nav-tip">${item.label}</span>
+    </button>`).join('');
+    return;
+  }
   const ch=getActive();
-  // Petite intervention : rail réduit (portfolio + accueil uniquement)
+  // Petite intervention : rail réduit (menu + portfolio + accueil uniquement)
   const items=(ch&&ch.d.type==='petite')
-    ?NAV_ITEMS.filter(it=>it.id==='portfolio'||it.id==='home')
+    ?NAV_ITEMS.filter(it=>it.id==='hub'||it.id==='portfolio'||it.id==='home')
     :NAV_ITEMS;
-  document.getElementById('nav-rail').innerHTML=items.map(item=>{
+  rail.innerHTML=items.map(item=>{
     if(item.sep)return'<div class="nav-sep"></div>';
     const active=state.screen===item.screen;
     return`<button class="nav-item${active?' active':''}" data-screen="${item.screen}" title="${item.label}">
@@ -3252,11 +3649,11 @@ function renderHome(d,c){
 load();
 if(state.chantiers.length===0){
   newChantier();
-  state.screen='portfolio';
 }else if(!state.activeId){
   state.activeId=state.chantiers[0].id;
-  state.screen='portfolio';
 }
+// Démarrage sur le menu principal (Chantiers / CRM / Devis)
+state.screen='hub';
 render();
 </script>
 </body>
