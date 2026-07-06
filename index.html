@@ -2,9 +2,25 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Suivi de Chantier SAP</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Suivi de Chantier Pro — Pilotage de chantiers BTP</title>
+<meta name="description" content="Application professionnelle de pilotage de chantiers BTP : suivi financier, planning, heures main-d'œuvre, sous-traitants, réserves OPR/OPL, comptes rendus, journal de chantier, CRM et devis. Données 100 % locales.">
+<meta name="application-name" content="Suivi de Chantier Pro">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#354a5f">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a222c">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chantier Pro">
+<meta property="og:title" content="Suivi de Chantier Pro — Pilotage de chantiers BTP">
+<meta property="og:description" content="Finances, planning, heures, sous-traitants, réserves, CR, journal, CRM et devis : le cockpit complet de vos chantiers.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23354a5f'/%3E%3Cpath d='M12 48V30l11-9 11 9v18h-8V36h-6v12z' fill='%23fff'/%3E%3Cpath d='M38 48V18l14 7v23z' fill='%230070f2'/%3E%3Crect x='42' y='28' width='3' height='3' fill='%23fff'/%3E%3Crect x='47' y='28' width='3' height='3' fill='%23fff'/%3E%3Crect x='42' y='35' width='3' height='3' fill='%23fff'/%3E%3Crect x='47' y='35' width='3' height='3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23354a5f'/%3E%3Cpath d='M12 48V30l11-9 11 9v18h-8V36h-6v12z' fill='%23fff'/%3E%3Cpath d='M38 48V18l14 7v23z' fill='%230070f2'/%3E%3C/svg%3E">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Suivi de Chantier Pro","short_name":"Chantier Pro","description":"Pilotage professionnel de chantiers BTP","start_url":".","display":"standalone","background_color":"%23f5f6f7","theme_color":"%23354a5f","lang":"fr"}'>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -73,7 +89,6 @@ body{font-family:'Public Sans',sans-serif;font-size:14px;color:var(--text);backg
   gap:2px;color:#cdd8e2;font-size:9px;font-family:inherit;transition:background .15s;
   text-align:center;padding:0 2px;
 }
-#nav-item:hover{background:rgba(255,255,255,.1)}
 #nav-rail .nav-item:hover{background:rgba(255,255,255,.1)}
 #nav-rail .nav-item.active{background:rgba(255,255,255,.16);color:#fff}
 #nav-rail .nav-sep{width:32px;height:1px;background:rgba(255,255,255,.15);margin:3px 0}
@@ -224,7 +239,13 @@ tr:hover td.sticky{background:#f8f9fa}
 ::-webkit-scrollbar-thumb{background:#c5cdd6;border-radius:3px}
 
 /* Print */
-@media print{#shell,#nav-rail{display:none!important}}
+@media print{
+  #shell,#nav-rail,#mobile-nav,#fab-slot,.fab,#toast-wrap{display:none!important}
+  body{height:auto;overflow:visible;background:#fff}
+  .layout{overflow:visible}
+  #main{overflow:visible;padding:0}
+  .card,.ck-card,.kpi-card,.tile,.pf-card{box-shadow:none;border:1px solid #d5dae0}
+}
 
 /* Amount input with € prefix */
 .amt-cell{display:flex;align-items:center;gap:3px}
@@ -407,12 +428,74 @@ body.dark .doc-ico{background:#233043}
 .acc-note{font-size:11px;color:var(--sub);margin-top:8px;line-height:1.4}
 .icon-btn:hover{background:rgba(255,255,255,.22)}
 
+/* ── Accessibilité : focus clavier visible ── */
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
+#shell :focus-visible,#nav-rail :focus-visible,#mobile-nav :focus-visible{outline-color:#8ec2ff}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+
+/* ── En-tête de page avec actions (export…) ── */
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.page-head .page-title{margin:0}
+
+/* ── Indicateur de sauvegarde ── */
+.save-ind{font-size:11px;color:rgba(255,255,255,.55);white-space:nowrap;flex-shrink:0}
+@media(max-width:900px){.save-ind{display:none}}
+
+/* ── Recherche globale (shell) ── */
+.search-wrap{position:relative;flex:1;max-width:340px}
+.search-wrap .shell-search{width:100%;max-width:none}
+.search-pop{
+  position:absolute;top:calc(100% + 6px);left:0;right:0;min-width:280px;max-height:min(430px,70vh);
+  overflow-y:auto;background:var(--card);color:var(--text);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:6px;z-index:230;
+}
+.sr-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--sub);padding:8px 10px 3px}
+.sr-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:none;background:none;
+  padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;color:var(--text)}
+.sr-item:hover,.sr-item:focus-visible{background:var(--bg)}
+.sr-item .sr-ico{width:28px;height:28px;border-radius:8px;background:#e8f1fd;color:var(--acc);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+body.dark .sr-item .sr-ico{background:#233043}
+.sr-item .sr-txt{flex:1;min-width:0}
+.sr-item .sr-name{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr-item .sr-sub{display:block;font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr-empty{padding:14px;text-align:center;color:var(--sub);font-size:13px}
+
+/* ── Centre de notifications ── */
+.notif-panel{
+  position:fixed;z-index:220;top:52px;right:56px;width:340px;max-width:calc(100vw - 24px);
+  max-height:calc(100vh - 70px);overflow-y:auto;background:var(--card);border:1px solid var(--border);
+  border-radius:14px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:12px;color:var(--text);
+}
+.notif-head{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;padding:2px 4px 10px}
+.notif-count{background:var(--warn);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px}
+.nt-item{display:flex;gap:10px;width:100%;text-align:left;border:none;background:none;padding:9px 8px;
+  border-radius:10px;cursor:pointer;font-family:inherit;font-size:13px;color:var(--text);align-items:flex-start}
+.nt-item:hover,.nt-item:focus-visible{background:var(--bg)}
+.nt-item .nt-ico{width:28px;height:28px;border-radius:8px;background:#fff3e0;color:var(--warn);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+body.dark .nt-item .nt-ico{background:#3a2c1a}
+.nt-item .nt-ch{font-size:11px;color:var(--sub);margin-top:1px}
+.notif-empty{padding:20px 10px;text-align:center;color:var(--sub);font-size:13px}
+
+/* ── Toasts (retours non bloquants) ── */
+#toast-wrap{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{
+  background:var(--shell);color:#fff;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:500;
+  box-shadow:0 6px 20px rgba(0,0,0,.3);display:flex;align-items:center;gap:8px;max-width:min(92vw,480px);
+  animation:toast-in .22s ease-out;
+}
+.toast.err{background:var(--neg)}
+.toast.ok svg{color:#7ee2a8}
+@keyframes toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:760px){#toast-wrap{bottom:88px}.notif-panel{right:12px}}
+
 @media(max-width:760px){
   #nav-rail{display:none}
   #main{padding:12px 12px 84px}
   #shell .pf-btn span,#shell .pf-btn{font-size:12px}
   #shell select#chantier-sw{max-width:130px}
-  #shell .shell-search{display:none}
+  #shell .search-wrap{display:none}
   .kanban{grid-template-columns:1fr;gap:12px}
   .jr-fields{grid-template-columns:1fr}
   .cockpit-grid{grid-template-columns:1fr 1fr}
@@ -441,11 +524,14 @@ body.dark .doc-ico{background:#233043}
   <nav id="nav-rail"></nav>
   <main id="main"></main>
 </div>
-<nav id="mobile-nav"></nav>
+<nav id="mobile-nav" aria-label="Navigation mobile"></nav>
 <div id="fab-slot"></div>
+<div id="toast-wrap" role="status" aria-live="polite"></div>
+<noscript><div style="padding:40px;text-align:center;font-family:sans-serif">Cette application nécessite JavaScript pour fonctionner.</div></noscript>
 
 <script>
 'use strict';
+const APP_VERSION='3.0';
 // ─── Utilities ───────────────────────────────────────────────────────────────
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const n=x=>{const v=parseFloat(x);return isNaN(v)?0:v};
@@ -517,6 +603,8 @@ const ico={
   apps:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><line x1="17.5" y1="14" x2="17.5" y2="21"/><line x1="14" y1="17.5" x2="21" y2="17.5"/>',
   crm:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
   devis:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/><line x1="9" y1="9" x2="10" y2="9"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  checkmark:'<polyline points="20 6 9 17 4 12"/>',
 };
 
 // ─── Bibliothèque cadences & prix (étanchéité · bardage · couverture) ────────
@@ -619,11 +707,13 @@ const THEME_KEY='suivi_chantier_theme';
 const ACC_KEY='suivi_chantier_account';
 const CRM_KEY='suivi_chantier_crm_v1';
 const DEVIS_KEY='suivi_chantier_devis_v1';
+const BACKUP_KEY='suivi_chantier_last_backup';
 let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
   account:{name:'',email:'',societe:'',connected:false},accountOpen:false,
   crmData:{contacts:[]},crmQuery:'',
-  devisData:{list:[]},devisId:null};
+  devisData:{list:[]},devisId:null,
+  searchQ:'',notifOpen:false,lastSaved:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
 function setHTab(val){state.hTab=val;render();}
 
@@ -657,8 +747,8 @@ function load(){
   try{const v=JSON.parse(localStorage.getItem(DEVIS_KEY)||'null');if(v&&Array.isArray(v.list))state.devisData=v;}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
-function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData))}catch(e){}}
-function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.devisData))}catch(e){}}
+function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
+function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.devisData));markSaved();}catch(e){}}
 
 // Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
 function setGlobalD(path,value){
@@ -681,12 +771,217 @@ function accountInitials(){
 }
 
 function save(){
-  try{localStorage.setItem(KEY,JSON.stringify({chantiers:state.chantiers,activeId:state.activeId}))}
+  try{
+    localStorage.setItem(KEY,JSON.stringify({chantiers:state.chantiers,activeId:state.activeId}));
+    markSaved();
+  }
   catch(e){
     console.warn('save error',e);
-    if(e&&(e.name==='QuotaExceededError'||/quota/i.test(String(e))))
-      alert("Stockage local plein : supprimez d'anciennes photos pour continuer à enregistrer.");
+    if(e&&(e.name==='QuotaExceededError'||/quota/i.test(String(e)))){
+      const now=Date.now();
+      if(!save._warned||now-save._warned>60000){
+        save._warned=now;
+        toast("Stockage local plein : supprimez d'anciennes photos ou exportez une sauvegarde.",'err',6000);
+      }
+    }
   }
+}
+// Indicateur discret « Enregistré HH:MM » dans la barre supérieure
+function markSaved(){
+  state.lastSaved=new Date();
+  const el=document.getElementById('save-ind');
+  if(el)el.textContent=savedLabel();
+}
+function savedLabel(){
+  if(!state.lastSaved)return'';
+  const d=state.lastSaved;
+  return'✓ Enregistré '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+// ─── Toasts (retours non bloquants) ──────────────────────────────────────────
+function toast(msg,type='ok',ms=2600){
+  const wrap=document.getElementById('toast-wrap');if(!wrap)return;
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  t.innerHTML=svgIcon(type==='err'?ico.warn:ico.checkmark,15)+'<span></span>';
+  t.querySelector('span').textContent=msg;
+  wrap.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .25s';setTimeout(()=>t.remove(),260);},ms);
+}
+
+// ─── Export CSV (compatible Excel FR : BOM UTF-8, séparateur « ; ») ──────────
+function downloadCSV(filename,rows){
+  const csv='\ufeff'+rows.map(r=>r.map(v=>{v=String(v??'');return/[";\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(';')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('Export CSV téléchargé : '+filename);
+}
+const slugify=s=>(String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''))||'export';
+function csvBtn(kind){return`<button class="btn btn-ghost btn-sm" data-action="exportCsv" data-kind="${kind}" title="Exporter en CSV (Excel)">${svgIcon(ico.download,13)} Export CSV</button>`;}
+function exportCsvKind(kind){
+  const dec=x=>String(x??'').replace('.',',');
+  if(kind==='crm'){
+    downloadCSV('contacts-crm-'+todayISO()+'.csv',[
+      ['Nom','Société','Type','Statut','Téléphone','E-mail','Dernier contact','Notes'],
+      ...state.crmData.contacts.filter(c=>c.nom).map(c=>[c.nom,c.societe,c.type,c.statut,c.tel,c.email,fmtDateFR(c.dernierContact),c.notes])
+    ]);return;
+  }
+  if(kind==='devis'){
+    downloadCSV('devis-'+todayISO()+'.csv',[
+      ['N°','Client','Date','Statut','Total HT','TVA','Total TTC'],
+      ...state.devisData.list.map(v=>{const t=devisTotals(v);return[v.num,v.client,fmtDateFR(v.date),v.statut,dec(t.ht.toFixed(2)),dec(t.tva.toFixed(2)),dec(t.ttc.toFixed(2))];})
+    ]);return;
+  }
+  const ch=getActive();
+  if(!ch){toast('Aucun chantier actif.','err');return;}
+  const d=ch.d;
+  const fname=t=>`${t}-${slugify(d.ident.nom||'chantier')}-${todayISO()}.csv`;
+  switch(kind){
+    case'planning':
+      downloadCSV(fname('planning'),[
+        ['Tâche','Responsable','Lot','Durée (j)','Début','Fin','Avancement %','Statut','Priorité','Commentaire'],
+        ...d.planning.filter(t=>t.tache).map(t=>[t.tache,t.responsable,t.lot,dec(t.duree),fmtDateFR(t.debut),fmtDateFR(t.fin),dec(t.avancement),t.statut,t.priorite,t.commentaire]),
+        [],
+        ['Jalon','Date prévisionnelle','Date réelle','Statut'],
+        ...d.jalons.map(j=>[j.nom,fmtDateFR(j.datePrev),fmtDateFR(j.dateReel),j.statut])
+      ]);break;
+    case'heures':{
+      const wk=state.hWeek||weekKey(new Date());
+      const days=weekDays(wk);
+      const wd=(d.heuresHebdo||{})[wk]||{};
+      downloadCSV(fname('heures-'+wk),[
+        ['Semaine '+isoWeekNum(wk),fmtWeekRange(wk)],
+        ['Compagnon','Catégorie',...days.map(x=>x.label+' '+x.num),'Total semaine','Cumul chantier'],
+        ...d.compagnons.map(comp=>{
+          const cd=wd[comp.id]||{};
+          const tot=days.reduce((s,day)=>s+n(cd[day.key]),0);
+          let cum=0;Object.values(d.heuresHebdo||{}).forEach(w2=>{const c2=w2[comp.id];if(c2)cum+=Object.values(c2).reduce((s,v)=>s+n(v),0);});
+          return[`${comp.prenom||''} ${comp.nom||''}`.trim(),comp.categorie,...days.map(day=>dec(cd[day.key]||'')),dec(tot),dec(cum)];
+        })
+      ]);break;}
+    case'reserves':
+      downloadCSV(fname('reserves'),[
+        ['N°','Type','Lot','Description','Entreprise','Date constat','Levée prévue','Impact (j)','Statut','Levée réelle','Note'],
+        ...d.reserves.filter(r=>r.description).map(r=>[r.num,r.type,r.lot,r.description,r.entreprise,fmtDateFR(r.dateConstat),fmtDateFR(r.dateLeveePrev),dec(r.impact),r.statut,fmtDateFR(r.dateLeveeReel),r.detailNote])
+      ]);break;
+    case'ts':
+      downloadCSV(fname('ts-aleas'),[
+        ['N°','Date','Nature','Demandeur','Montant estimé','Montant accordé','Statut','Impact planning','Impact budget','N° avenant','Détail'],
+        ...d.ts.filter(t=>t.nature).map(t=>[t.num,fmtDateFR(t.date),t.nature,t.demandeur,dec(t.mtEstime),dec(t.mtAccorde),t.statut,t.impactPlanning,t.impactBudget,t.numAvenant,t.detail])
+      ]);break;
+    case'st':
+      downloadCSV(fname('sous-traitants'),[
+        ['Entreprise','Lot','Catégorie','Marché HT','DC4','Agrément','Montant situation','RG','Statut','Descriptif'],
+        ...d.st.filter(s=>s.entreprise).map(s=>[s.entreprise,s.lot,s.categorie,dec(s.montantHT),s.dc4,s.agrement,dec(s.mtSit),s.rg,s.statut,s.obs])
+      ]);break;
+    case'fournisseurs':
+      downloadCSV(fname('fournisseurs'),[
+        ['Fournisseur','Désignation','Catégorie','N° BC','Montant HT','Livraison prévue','Reçu','Montant facturé','Statut'],
+        ...d.fournisseurs.filter(f=>f.fournisseur).map(f=>[f.fournisseur,f.designation,f.categorie,f.numBC,dec(f.montant),fmtDateFR(f.livraison),f.recu,dec(f.mtFacture),f.statut])
+      ]);break;
+    case'situations':{
+      const c=computeAll(d);
+      downloadCSV(fname('situations'),[
+        ['N°','Période','Date envoi','Montant HT','Cumul HT','Date paiement','Délai (j)','Statut','Retard (j)'],
+        ...c.situations.filter(s=>s.montantHT||s.dateEnvoi).map(s=>[s.num,s.periode,fmtDateFR(s.dateEnvoi),dec(s.montantHT),dec(s.cumul),fmtDateFR(s.datePaiement),dec(s.delai),s.statut,s.retard>0?dec(s.retard):''])
+      ]);break;}
+    default:toast('Export inconnu.','err');
+  }
+}
+
+// ─── Centre de notifications (agrégé sur tous les chantiers) ─────────────────
+function buildNotifications(){
+  const items=[];
+  state.chantiers.forEach(ch=>{
+    try{
+      if(ch.d.type==='petite'){
+        const s=summarize(ch.d);
+        if(s.marge<0)items.push({chId:ch.id,ch:s.nom,msg:'Marge négative : '+eurRaw(s.marge)});
+        return;
+      }
+      computeAll(ch.d).alerts.forEach(a=>items.push({chId:ch.id,ch:ch.d.ident.nom||'Sans nom',msg:a.msg}));
+    }catch(e){}
+  });
+  try{
+    const last=parseInt(localStorage.getItem(BACKUP_KEY)||'0');
+    const hasData=state.chantiers.length>1||state.chantiers.some(c=>c.d.ident.nom)||state.crmData.contacts.length>0||state.devisData.list.length>0;
+    if(hasData&&(!last||Date.now()-last>14*86400000)){
+      items.push({backup:true,ch:'Sauvegarde des données',msg:last?'Dernier export il y a plus de 14 jours — exportez une sauvegarde (.json).':'Aucune sauvegarde exportée — pensez à exporter vos données (.json).'});
+    }
+  }catch(e){}
+  return items;
+}
+function notifPanel(){
+  const items=buildNotifications();
+  return`<div class="notif-panel" role="dialog" aria-label="Notifications">
+    <div class="notif-head"><span>Notifications</span>${items.length?`<span class="notif-count">${items.length}</span>`:''}</div>
+    ${items.length?items.map(it=>`<button class="nt-item" data-action="${it.backup?'notifBackup':'openNotif'}"${it.chId?` data-id="${it.chId}"`:''}>
+        <span class="nt-ico">${svgIcon(it.backup?ico.pdf:ico.warn,14)}</span>
+        <span style="flex:1;min-width:0"><span style="display:block">${esc(it.msg)}</span><span class="nt-ch">${esc(it.ch)}</span></span>
+      </button>`).join(''):'<div class="notif-empty">Aucune alerte — tous vos chantiers sont au vert ✓</div>'}
+  </div>`;
+}
+
+// ─── Recherche globale (chantiers, tâches, réserves, docs, CRM, devis…) ──────
+const SEARCH_CAT_ORDER=['Chantiers','Tâches','Réserves','Documents','Journal','Sous-traitants','Fournisseurs','Contacts CRM','Devis'];
+function globalSearchResults(q){
+  q=q.trim().toLowerCase();
+  if(q.length<2)return[];
+  const out=[];
+  const M=s=>String(s||'').toLowerCase().includes(q);
+  const push=(cat,icon,name,sub,go)=>out.push({cat,icon,name,sub,go});
+  state.chantiers.forEach(ch=>{
+    const d=ch.d,nom=d.ident.nom||'Sans nom';
+    if(M(nom)||M(d.ident.otp)||M(d.ident.adresse)||M(d.ident.chef))push('Chantiers',ico.brief,nom,d.ident.adresse||d.ident.otp||'',{ch:ch.id,screen:'home'});
+    d.planning.forEach(t=>{if(t.tache&&(M(t.tache)||M(t.lot)||M(t.responsable)))push('Tâches',ico.kanban,t.tache,nom+(t.statut&&t.statut!=='—'?' · '+t.statut:''),{ch:ch.id,screen:'tasks'});});
+    d.reserves.forEach(r=>{if(r.description&&(M(r.description)||M(r.lot)||M(r.entreprise)))push('Réserves',ico.res,r.description,nom+' · '+r.statut,{ch:ch.id,screen:'reserves'});});
+    (d.documents||[]).forEach(doc=>{if(M(doc.name))push('Documents',ico.folder,doc.name,nom,{ch:ch.id,screen:'documents'});});
+    (d.journal||[]).forEach(e=>{if(M(e.travaux)||M(e.problemes)||M(e.decisions))push('Journal',ico.journal,(e.travaux||e.problemes||'Entrée de journal').slice(0,60),nom+' · '+fmtDateFR(e.date),{ch:ch.id,screen:'journal'});});
+    d.st.forEach(s=>{if(s.entreprise&&M(s.entreprise))push('Sous-traitants',ico.st,s.entreprise,nom+(s.lot?' · '+s.lot:''),{ch:ch.id,screen:'st'});});
+    d.fournisseurs.forEach(f=>{if(f.fournisseur&&(M(f.fournisseur)||M(f.designation)))push('Fournisseurs',ico.fourn,f.fournisseur,nom+(f.designation?' · '+f.designation:''),{ch:ch.id,screen:'fournisseurs'});});
+  });
+  state.crmData.contacts.forEach(ct=>{if(ct.nom&&(M(ct.nom)||M(ct.societe)||M(ct.email)))push('Contacts CRM',ico.crm,ct.nom,ct.societe||ct.email||'',{screen:'crm'});});
+  state.devisData.list.forEach(dv=>{if(M(dv.num)||M(dv.client))push('Devis',ico.devis,(dv.num||'Devis')+(dv.client?' — '+dv.client:''),dv.statut||'',{screen:'devis',devis:dv.id});});
+  const byCat={};const limited=[];
+  for(const r of out){byCat[r.cat]=(byCat[r.cat]||0)+1;if(byCat[r.cat]<=5)limited.push(r);if(limited.length>=24)break;}
+  limited.sort((a,b)=>SEARCH_CAT_ORDER.indexOf(a.cat)-SEARCH_CAT_ORDER.indexOf(b.cat));
+  return limited;
+}
+let searchResultsCache=[];
+function renderSearchPop(){
+  const pop=document.getElementById('search-pop');if(!pop)return;
+  const q=state.searchQ||'';
+  if(q.trim().length<2){pop.style.display='none';pop.innerHTML='';return;}
+  const res=searchResultsCache=globalSearchResults(q);
+  pop.style.display='block';
+  if(!res.length){pop.innerHTML='<div class="sr-empty">Aucun résultat pour « '+esc(q)+' »</div>';return;}
+  let html='',lastCat='';
+  res.forEach((r,i)=>{
+    if(r.cat!==lastCat){html+=`<div class="sr-cat">${r.cat}</div>`;lastCat=r.cat;}
+    html+=`<button class="sr-item" data-action="searchGo" data-sr="${i}">
+      <span class="sr-ico">${svgIcon(r.icon,14)}</span>
+      <span class="sr-txt"><span class="sr-name">${esc(r.name)}</span>${r.sub?`<span class="sr-sub">${esc(r.sub)}</span>`:''}</span>
+    </button>`;
+  });
+  pop.innerHTML=html;
+}
+function searchGo(i){
+  const r=searchResultsCache[i];if(!r)return;
+  state.searchQ='';
+  if(r.go.ch)state.activeId=r.go.ch;
+  if(r.go.devis)state.devisId=r.go.devis;
+  state.screen=r.go.screen;
+  render();
+}
+function storageInfo(){
+  try{
+    let bytes=0;
+    for(const k of[KEY,CRM_KEY,DEVIS_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
+    const mb=bytes/1048576;
+    return'Données locales : '+(mb>=1?mb.toFixed(1).replace('.',',')+' Mo':Math.max(1,Math.round(bytes/1024))+' Ko');
+  }catch(e){return''}
 }
 
 // ─── Field helpers (mobile / carnet de chantier) ───────────────────────────────
@@ -730,6 +1025,8 @@ function exportBackup(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
   a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  try{localStorage.setItem(BACKUP_KEY,String(Date.now()))}catch(e){}
+  toast('Sauvegarde exportée : '+state.chantiers.length+' chantier(s), CRM et devis inclus.');
 }
 function importBackupData(parsed){
   if(!parsed||!Array.isArray(parsed.chantiers)){alert('Fichier de sauvegarde invalide.');return;}
@@ -948,6 +1245,23 @@ function summarize(d){
   if(hasReception){statut='Réceptionné';statutColor='#5b738b';statutBg='#f0f2f5';}
   else if(av>=90){statut='Livraison';statutColor='#e76500';statutBg='#fff3e0';}
   else if(av>0||d.ident.dateOS){statut='En cours';statutColor='#107e3e';statutBg='#e8f5e9';}
+
+  // Petite intervention : le marché et la marge viennent de la fiche 1 page
+  // (montant vendu − déboursé fournitures + matériel + main d'œuvre)
+  if(d.type==='petite'){
+    const p=d.petite||{};
+    const lt=x=>n(x.qte)*n(x.pu);
+    const totF=(p.fournitures||[]).reduce((s,x)=>s+lt(x),0);
+    const totM=(p.materiel||[]).reduce((s,x)=>s+lt(x),0);
+    const totMO=(p.mainoeuvre||[]).reduce((s,x)=>s+n(x.heures)*n(x.taux),0);
+    const recette=n(p.montant);
+    const debourse=totF+totM+totMO;
+    const marge=recette-debourse;
+    const taux=recette>0?marge/recette*100:0;
+    return{nom:d.ident.nom||'Sans nom',otp:d.ident.otp,mo:p.client||d.ident.mo,chef:d.ident.chef,
+      statut,statutColor,statutBg,marcheActualise:recette,marge,taux,avancement:av,
+      alertCount:marge<0?1:0,retards:0};
+  }
 
   const marcheInitial=n(d.finance.marcheInitial)||n(d.contract.montantHT);
   const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
@@ -1211,6 +1525,16 @@ document.addEventListener('click',e=>{
   if(state.accountOpen&&!e.target.closest('.acc-panel')&&!e.target.closest('#avatar-btn')){
     state.accountOpen=false;render();return;
   }
+  // Fermer le centre de notifications si clic en dehors
+  if(state.notifOpen&&!e.target.closest('.notif-panel')&&!e.target.closest('.notif-btn')){
+    state.notifOpen=false;render();return;
+  }
+  // Fermer la recherche globale si clic en dehors (sans bloquer le clic)
+  if(state.searchQ&&!e.target.closest('.search-wrap')){
+    state.searchQ='';
+    const si=document.getElementById('shell-search');if(si)si.value='';
+    renderSearchPop();
+  }
   const btn=e.target.closest('[data-action]');
   if(btn){
     const action=btn.dataset.action;
@@ -1306,6 +1630,12 @@ document.addEventListener('click',e=>{
     }
     if(action==='exportDevis'){exportDevisPdf(id);return;}
     if(action==='devisToChantier'){devisToChantier(id);return;}
+    // ── Recherche globale / notifications / exports ──
+    if(action==='searchGo'){searchGo(parseInt(btn.dataset.sr));return;}
+    if(action==='toggleNotif'){state.notifOpen=!state.notifOpen;state.accountOpen=false;render();return;}
+    if(action==='openNotif'){state.activeId=id;state.notifOpen=false;state.screen='dashboard';save();render();return;}
+    if(action==='notifBackup'){state.notifOpen=false;exportBackup();render();return;}
+    if(action==='exportCsv'){exportCsvKind(btn.dataset.kind);return;}
     // ── Compte / profil ──
     if(action==='toggleAccount'){toggleAccount();return;}
     if(action==='accountLogin'){accountLogin();return;}
@@ -1388,6 +1718,34 @@ document.addEventListener('change',e=>{
   }
 },{capture:true});
 
+// ── Recherche globale : saisie & raccourcis clavier ──
+document.addEventListener('input',e=>{
+  if(e.target&&e.target.id==='shell-search'){
+    state.searchQ=e.target.value;
+    renderSearchPop();
+  }
+});
+document.addEventListener('keydown',e=>{
+  // Ctrl/Cmd + K : focus sur la recherche globale
+  if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){
+    const s=document.getElementById('shell-search');
+    if(s){e.preventDefault();s.focus();s.select();}
+    return;
+  }
+  // Échap : ferme panneaux (compte, notifications, recherche)
+  if(e.key==='Escape'){
+    let dirty=false;
+    if(state.accountOpen){state.accountOpen=false;dirty=true;}
+    if(state.notifOpen){state.notifOpen=false;dirty=true;}
+    if(state.searchQ){
+      state.searchQ='';
+      const s=document.getElementById('shell-search');if(s)s.value='';
+      renderSearchPop();
+    }
+    if(dirty)render();
+  }
+});
+
 // ─── More screen renderers ────────────────────────────────────────────────────
 
 // Planning
@@ -1430,7 +1788,7 @@ function renderPlanning(d,c){
   }).join('');
 
   return`
-    <h1 class="page-title">Planning</h1>
+    <div class="page-head"><h1 class="page-title">Planning</h1>${csvBtn('planning')}</div>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Avancement moyen</div><div class="kpi-value">${c.planAv>0?pct(c.planAv):'—'}</div></div>
       <div class="kpi-card"><div class="kpi-label">Tâches</div><div class="kpi-value">${d.planning.filter(t=>t.tache).length}</div></div>
@@ -1531,7 +1889,7 @@ function renderHeures(d,c){
   `).join('');
 
   return`
-    <h1 class="page-title">Heures Main d'œuvre</h1>
+    <div class="page-head"><h1 class="page-title">Heures Main d'œuvre</h1>${csvBtn('heures')}</div>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Budget heures</div><div class="kpi-value">${c.hBudg||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
       <div class="kpi-card"><div class="kpi-label">Consommé (toutes semaines)</div><div class="kpi-value" style="color:${c.hColor}">${c.hConso>0?c.hConso:c.hConso||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
@@ -1636,7 +1994,7 @@ function renderReserves(d,c){
     ];
   }).join('');
   return`
-    <h1 class="page-title">Réserves OPR / OPL</h1>
+    <div class="page-head"><h1 class="page-title">Réserves OPR / OPL</h1>${csvBtn('reserves')}</div>
     <div class="kpi-strip" style="grid-template-columns:repeat(3,1fr)">
       <div class="kpi-card"><div class="kpi-label">Total réserves</div><div class="kpi-value">${c.resTotal}</div></div>
       <div class="kpi-card"><div class="kpi-label">Ouvertes</div><div class="kpi-value" style="color:${c.resOuvertes>0?'var(--neg)':'var(--sub)'}">${c.resOuvertes}</div></div>
@@ -1719,7 +2077,7 @@ function renderTS(d,c){
     ];
   }).join('');
   return`
-    <h1 class="page-title">TS & Aléas</h1>
+    <div class="page-head"><h1 class="page-title">TS & Aléas</h1>${csvBtn('ts')}</div>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">TS total</div><div class="kpi-value">${d.ts.filter(t=>t.nature).length}</div></div>
       <div class="kpi-card"><div class="kpi-label">En attente</div><div class="kpi-value" style="color:${c.tsEnAttente>0?'var(--warn)':'var(--sub)'}">${c.tsEnAttente}</div></div>
@@ -2347,6 +2705,7 @@ function renderFinance(d,c){
     <div class="card" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <div class="card-title" style="margin:0">Situations de travaux</div>
+        ${csvBtn('situations')}
         <div style="display:flex;gap:12px;font-size:12px">
           <span>Facturé : <strong>${facture>0?eurRaw(facture):'—'}</strong></span>
           <span>Encaissé : <strong style="color:var(--pos)">${encaisse>0?eurRaw(encaisse):'—'}</strong></span>
@@ -2467,7 +2826,7 @@ function renderST(d,c){
     ];
   }).join('');
   return`
-    <h1 class="page-title">Sous-traitants</h1>
+    <div class="page-head"><h1 class="page-title">Sous-traitants</h1>${csvBtn('st')}</div>
     <div class="kpi-strip">
       ${stKpis.map(([l,v,col])=>`<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value" style="color:${col};font-size:17px">${v}</div></div>`).join('')}
     </div>
@@ -2508,7 +2867,7 @@ function renderFournisseurs(d,c){
     <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="fournisseurs" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
   </tr>`).join('');
   return`
-    <h1 class="page-title">Fournisseurs</h1>
+    <div class="page-head"><h1 class="page-title">Fournisseurs</h1>${csvBtn('fournisseurs')}</div>
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Fournisseurs actifs</div><div class="kpi-value">${c.fournActifs}</div></div>
       <div class="kpi-card"><div class="kpi-label">Total engagé</div><div class="kpi-value" style="font-size:17px">${c.fTotal>0?eurRaw(c.fTotal):'—'}</div></div>
@@ -2680,7 +3039,7 @@ function journalEntry(e,i,d){
       <div class="jr-field full"><label class="form-label">Décisions prises</label>
         <textarea class="form-textarea" name="journal.${i}.decisions">${esc(e.decisions)}</textarea></div>
     </div>
-    ${photos.length?`<div class="photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="photo-tile"><button class="ph-del" data-action="delPhoto" data-id="${p.id}">${svgIcon(ico.trash,12)}</button><img src="${p.src}" data-action="openPhoto" data-id="${p.id}"></div>`).join('')}</div>`:''}
+    ${photos.length?`<div class="photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="photo-tile"><button class="ph-del" data-action="delPhoto" data-id="${p.id}" aria-label="Supprimer la photo">${svgIcon(ico.trash,12)}</button><img src="${p.src}" data-action="openPhoto" data-id="${p.id}" loading="lazy" decoding="async" alt="Photo de chantier du ${esc(fmtDateFR(p.date))}"></div>`).join('')}</div>`:''}
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
       <label class="btn btn-ghost btn-sm" style="cursor:pointer">${svgIcon(ico.camera,13)} Ajouter photo
         <input type="file" accept="image/*" capture="environment" data-photo-journal="${e.id}" style="display:none"></label>
@@ -2707,8 +3066,8 @@ function renderPhotos(d,c){
         <div class="photo-grid">${groups[dt].map(p=>{
           const idx=d.photos.indexOf(p);
           return`<div class="photo-tile">
-            <button class="ph-del" data-action="delPhoto" data-id="${p.id}">${svgIcon(ico.trash,12)}</button>
-            <img src="${p.src}" data-action="openPhoto" data-id="${p.id}">
+            <button class="ph-del" data-action="delPhoto" data-id="${p.id}" aria-label="Supprimer la photo">${svgIcon(ico.trash,12)}</button>
+            <img src="${p.src}" data-action="openPhoto" data-id="${p.id}" loading="lazy" decoding="async" alt="Photo de chantier${p.note?' — '+esc(p.note):''}">
             <div class="ph-note">
               <input type="text" name="photos.${idx}.note" value="${esc(p.note||'')}" placeholder="Annotation…" style="width:100%;border:none;background:transparent;font-size:11px;color:var(--text)">
               <input type="text" name="photos.${idx}.link" value="${esc(p.link||'')}" placeholder="Lien tâche/événement…" style="width:100%;border:none;background:transparent;font-size:10px;color:var(--sub);margin-top:2px">
@@ -2905,7 +3264,7 @@ function renderCRM(){
       </div>`:''}
     </div>`).join('');
   return`
-    <h1 class="page-title">Mon CRM</h1>
+    <div class="page-head"><h1 class="page-title">Mon CRM</h1>${csvBtn('crm')}</div>
     <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
       ${kpis.map(([l,v,col])=>`<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value" style="color:${col}">${v}</div></div>`).join('')}
     </div>
@@ -3127,7 +3486,10 @@ function renderDevis(){
   return`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">Devis</h1>
-      <button class="btn btn-primary" data-action="addDevis">${svgIcon(ico.plus,14)} Nouveau devis</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${csvBtn('devis')}
+        <button class="btn btn-primary" data-action="addDevis">${svgIcon(ico.plus,14)} Nouveau devis</button>
+      </div>
     </div>
     <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
       <div class="kpi-card"><div class="kpi-label">Devis</div><div class="kpi-value">${list.length}</div></div>
@@ -3170,7 +3532,7 @@ function renderFab(){
   else if(state.screen==='crm'){act='fabCrm';}
   else if(state.screen==='devis'&&!state.devisId){act='addDevis';}
   else{slot.innerHTML='';return;}
-  slot.innerHTML=`<button class="fab" data-action="${act}" title="Ajouter">${svgIcon(icon,24)}</button>`;
+  slot.innerHTML=`<button class="fab" data-action="${act}" title="Ajouter" aria-label="Ajouter">${svgIcon(icon,24)}</button>`;
 }
 
 // ─── Main render ─────────────────────────────────────────────────────────────
@@ -3187,8 +3549,10 @@ function render(){
     if(el){try{el.focus({preventScroll:true});if(car!=null&&el.setSelectionRange)el.setSelectionRange(car,car);}catch(e){}}
   }
 }
+const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
 function renderMain(){
   applyTheme();
+  document.title=(SCREEN_TITLES[state.screen]?SCREEN_TITLES[state.screen]+' — ':'')+'Suivi de Chantier Pro';
   renderShell();
   renderNav();
   renderMobileNav();
@@ -3275,25 +3639,32 @@ function renderShell(){
   const ch=getActive();
   const appMode=['hub','crm','devis'].includes(state.screen);
   const chOptions=state.chantiers.map(c=>`<option value="${c.id}"${c.id===state.activeId?' selected':''}>${esc(c.d.ident.nom||'Sans nom')}</option>`).join('');
+  const notifCount=buildNotifications().length;
   document.getElementById('shell').innerHTML=`
-    <button class="logo-btn" data-action="goHub" title="Menu principal">SC</button>
+    <button class="logo-btn" data-action="goHub" title="Menu principal" aria-label="Menu principal">SC</button>
     <button class="pf-btn" data-action="goPortfolio">
       ${svgIcon(ico.brief,14)} Chantiers
     </button>
     <div class="divider"></div>
-    ${!appMode&&state.chantiers.length>0?`<select id="chantier-sw">${chOptions}</select>`:''}
-    ${appMode?'':'<input class="shell-search" type="text" placeholder="Rechercher…" id="shell-search">'}
+    ${!appMode&&state.chantiers.length>0?`<select id="chantier-sw" aria-label="Changer de chantier actif">${chOptions}</select>`:''}
+    <div class="search-wrap">
+      <input class="shell-search" type="search" placeholder="Rechercher partout… (Ctrl+K)" id="shell-search" aria-label="Recherche globale" autocomplete="off" value="${esc(state.searchQ||'')}">
+      <div class="search-pop" id="search-pop" style="display:none"></div>
+    </div>
     <div class="spacer"></div>
-    <button class="icon-btn" data-action="toggleTheme" title="${state.theme==='dark'?'Mode clair':'Mode sombre'}">
+    <span class="save-ind" id="save-ind">${savedLabel()}</span>
+    <button class="icon-btn" data-action="toggleTheme" title="${state.theme==='dark'?'Mode clair':'Mode sombre'}" aria-label="${state.theme==='dark'?'Passer en mode clair':'Passer en mode sombre'}">
       ${svgIcon(state.theme==='dark'?ico.sun:ico.moon,18)}
     </button>
-    <button class="notif-btn" title="Notifications">
+    <button class="notif-btn" data-action="toggleNotif" title="Notifications" aria-label="Notifications${notifCount?' ('+notifCount+')':''}" aria-expanded="${state.notifOpen?'true':'false'}">
       ${svgIcon(ico.bell,18)}
-      ${(ch&&summarize(ch.d).alertCount>0)?'<span class="notif-dot"></span>':''}
+      ${notifCount>0?'<span class="notif-dot"></span>':''}
     </button>
-    <div class="avatar" id="avatar-btn" data-action="toggleAccount" title="Mon compte">${accountInitials()}</div>
+    <button class="avatar" id="avatar-btn" data-action="toggleAccount" title="Mon compte" aria-label="Mon compte" style="border:none;font-family:inherit">${accountInitials()}</button>
     ${state.accountOpen?accountPanel():''}
+    ${state.notifOpen?notifPanel():''}
   `;
+  renderSearchPop();
 }
 
 function accountPanel(){
@@ -3326,6 +3697,10 @@ function accountPanel(){
         <label class="btn btn-ghost btn-sm acc-btn" style="cursor:pointer">${svgIcon(ico.folder,13)} Importer une sauvegarde
           <input type="file" accept="application/json,.json" data-import-backup style="display:none"></label>
         <div class="acc-note">Exportez pour sauvegarder ou transférer vos chantiers vers un autre appareil, puis importez le fichier.</div>
+      </div>
+      <div class="acc-sec" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="acc-note" style="margin:0">Suivi de Chantier Pro · v${APP_VERSION}</span>
+        <span class="acc-note" style="margin:0">${storageInfo()}</span>
       </div>
     </div>`;
 }
