@@ -707,12 +707,16 @@ const THEME_KEY='suivi_chantier_theme';
 const ACC_KEY='suivi_chantier_account';
 const CRM_KEY='suivi_chantier_crm_v1';
 const DEVIS_KEY='suivi_chantier_devis_v1';
+const BIB_KEY='suivi_chantier_bib_v1';
+const BPU_KEY='suivi_chantier_bpu_v1';
 const BACKUP_KEY='suivi_chantier_last_backup';
 let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
   account:{name:'',email:'',societe:'',connected:false},accountOpen:false,
   crmData:{contacts:[]},crmQuery:'',
   devisData:{list:[]},devisId:null,
+  bpuData:{list:[]},bpuId:null,
+  bibUser:[],bibFormOpen:false,
   searchQ:'',notifOpen:false,lastSaved:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
 function setHTab(val){state.hTab=val;render();}
@@ -745,23 +749,47 @@ function load(){
   try{const a=JSON.parse(localStorage.getItem(ACC_KEY)||'null');if(a)state.account=Object.assign(state.account,a);}catch(e){}
   try{const c=JSON.parse(localStorage.getItem(CRM_KEY)||'null');if(c&&Array.isArray(c.contacts))state.crmData=c;}catch(e){}
   try{const v=JSON.parse(localStorage.getItem(DEVIS_KEY)||'null');if(v&&Array.isArray(v.list))state.devisData=v;}catch(e){}
+  try{const b=JSON.parse(localStorage.getItem(BIB_KEY)||'null');if(b&&Array.isArray(b))state.bibUser=b;}catch(e){}
+  try{const p=JSON.parse(localStorage.getItem(BPU_KEY)||'null');if(p&&Array.isArray(p.list))state.bpuData=p;}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
 function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
 function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.devisData));markSaved();}catch(e){}}
+function saveBib(){try{localStorage.setItem(BIB_KEY,JSON.stringify(state.bibUser));markSaved();}catch(e){}}
+function saveBpu(){try{localStorage.setItem(BPU_KEY,JSON.stringify(state.bpuData));markSaved();}catch(e){}}
+// Bibliothèque complète : références perso (en tête) + base intégrée
+function getBib(){return state.bibUser.concat(BIB_CADENCES);}
+// ─── BPU (Bordereau de Prix Unitaires) liés aux prospects/clients ───────────
+function bpuTotals(b){let ht=0,tva=0;(b.lignes||[]).forEach(l=>{const base=n(l.qte||1)*n(l.pu);ht+=base;tva+=base*n(l.tva)/100;});return{ht,tva,ttc:ht+tva};}
+// BPU liés à un contact CRM (par contactId ou par nom/société)
+function bpusForContact(ct){
+  if(!ct)return[];
+  const nm=(ct.nom||'').trim().toLowerCase();
+  const composed=(ct.nom+(ct.societe?' ('+ct.societe+')':'')).trim().toLowerCase();
+  return state.bpuData.list.filter(b=>(b.contactId&&b.contactId===ct.id)||(b.client&&[nm,composed].includes(b.client.trim().toLowerCase())));
+}
+// BPU correspondant au client d'un devis
+function bpusForDevis(dv){
+  const c=(dv.client||'').trim().toLowerCase();
+  return state.bpuData.list.filter(b=>(dv.contactId&&b.contactId===dv.contactId)||(c&&b.client&&b.client.trim().toLowerCase()===c));
+}
+// Convertit les lignes d'un BPU en lignes de devis
+function bpuLinesToDevis(b){
+  return(b.lignes||[]).filter(l=>l.designation).map(l=>({designation:l.designation,qte:l.qte||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'}));
+}
 
 // Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
 function setGlobalD(path,value){
   const parts=path.split('.');
-  const root=parts.shift(); // 'crm' | 'devis'
-  let obj=root==='crm'?state.crmData:state.devisData;
+  const root=parts.shift(); // 'crm' | 'devis' | 'bpu'
+  let obj=root==='crm'?state.crmData:root==='bpu'?state.bpuData:state.devisData;
   for(let i=0;i<parts.length-1;i++){
     const k=parts[i];const nk=parts[i+1];
     if(obj[k]===undefined||obj[k]===null)obj[k]=/^\d+$/.test(nk)?[]:{};
     obj=obj[k];
   }
   obj[parts[parts.length-1]]=value;
-  if(root==='crm')saveCrm();else saveDevis();
+  if(root==='crm')saveCrm();else if(root==='bpu')saveBpu();else saveDevis();
 }
 function accountInitials(){
   const nm=(state.account&&state.account.name||'').trim();
@@ -832,6 +860,12 @@ function exportCsvKind(kind){
     downloadCSV('devis-'+todayISO()+'.csv',[
       ['N°','Client','Date','Statut','Total HT','TVA','Total TTC'],
       ...state.devisData.list.map(v=>{const t=devisTotals(v);return[v.num,v.client,fmtDateFR(v.date),v.statut,dec(t.ht.toFixed(2)),dec(t.tva.toFixed(2)),dec(t.ttc.toFixed(2))];})
+    ]);return;
+  }
+  if(kind==='bpu'){
+    downloadCSV('bpu-'+todayISO()+'.csv',[
+      ['BPU','Client','Désignation','Unité','PU HT','TVA %'],
+      ...state.bpuData.list.flatMap(b=>(b.lignes||[]).filter(l=>l.designation).map(l=>[b.nom,b.client,l.designation,l.unite,dec(l.pu),l.tva||'20']))
     ]);return;
   }
   const ch=getActive();
@@ -925,7 +959,7 @@ function notifPanel(){
 }
 
 // ─── Recherche globale (chantiers, tâches, réserves, docs, CRM, devis…) ──────
-const SEARCH_CAT_ORDER=['Chantiers','Tâches','Réserves','Documents','Journal','Sous-traitants','Fournisseurs','Contacts CRM','Devis'];
+const SEARCH_CAT_ORDER=['Chantiers','Tâches','Réserves','Documents','Journal','Sous-traitants','Fournisseurs','Contacts CRM','Devis','BPU'];
 function globalSearchResults(q){
   q=q.trim().toLowerCase();
   if(q.length<2)return[];
@@ -944,6 +978,7 @@ function globalSearchResults(q){
   });
   state.crmData.contacts.forEach(ct=>{if(ct.nom&&(M(ct.nom)||M(ct.societe)||M(ct.email)))push('Contacts CRM',ico.crm,ct.nom,ct.societe||ct.email||'',{screen:'crm'});});
   state.devisData.list.forEach(dv=>{if(M(dv.num)||M(dv.client))push('Devis',ico.devis,(dv.num||'Devis')+(dv.client?' — '+dv.client:''),dv.statut||'',{screen:'devis',devis:dv.id});});
+  state.bpuData.list.forEach(b=>{if(M(b.nom)||M(b.client)||(b.lignes||[]).some(l=>M(l.designation)))push('BPU',ico.list,(b.nom||'BPU')+(b.client?' — '+b.client:''),(b.lignes||[]).filter(l=>l.designation).length+' ligne(s)',{screen:'bpu',bpu:b.id});});
   const byCat={};const limited=[];
   for(const r of out){byCat[r.cat]=(byCat[r.cat]||0)+1;if(byCat[r.cat]<=5)limited.push(r);if(limited.length>=24)break;}
   limited.sort((a,b)=>SEARCH_CAT_ORDER.indexOf(a.cat)-SEARCH_CAT_ORDER.indexOf(b.cat));
@@ -972,13 +1007,14 @@ function searchGo(i){
   state.searchQ='';
   if(r.go.ch)state.activeId=r.go.ch;
   if(r.go.devis)state.devisId=r.go.devis;
+  if(r.go.bpu)state.bpuId=r.go.bpu;
   state.screen=r.go.screen;
   render();
 }
 function storageInfo(){
   try{
     let bytes=0;
-    for(const k of[KEY,CRM_KEY,DEVIS_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
+    for(const k of[KEY,CRM_KEY,DEVIS_KEY,BIB_KEY,BPU_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
     const mb=bytes/1048576;
     return'Données locales : '+(mb>=1?mb.toFixed(1).replace('.',',')+' Mo':Math.max(1,Math.round(bytes/1024))+' Ko');
   }catch(e){return''}
@@ -1020,7 +1056,7 @@ function accountEdit(){state.account.connected=false;saveAccount();render();}
 function exportBackup(){
   const data=JSON.stringify({app:'suivi-chantier',version:2,exportedAt:new Date().toISOString(),
     account:state.account,activeId:state.activeId,chantiers:state.chantiers,
-    crm:state.crmData,devis:state.devisData},null,2);
+    crm:state.crmData,devis:state.devisData,bib:state.bibUser,bpu:state.bpuData},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
@@ -1036,6 +1072,8 @@ function importBackupData(parsed){
   if(parsed.account){state.account=Object.assign({name:'',email:'',societe:'',connected:false},parsed.account);saveAccount();}
   if(parsed.crm&&Array.isArray(parsed.crm.contacts)){state.crmData=parsed.crm;saveCrm();}
   if(parsed.devis&&Array.isArray(parsed.devis.list)){state.devisData=parsed.devis;saveDevis();}
+  if(Array.isArray(parsed.bib)){state.bibUser=parsed.bib;saveBib();}
+  if(parsed.bpu&&Array.isArray(parsed.bpu.list)){state.bpuData=parsed.bpu;saveBpu();}
   save();state.accountOpen=false;state.screen='hub';render();
   alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
@@ -1489,8 +1527,15 @@ document.addEventListener('change',e=>{
   if(!name)return;
   const val=t.type==='checkbox'?t.checked:t.value;
   // Champs des stores globaux (CRM / Devis) — indépendants du chantier actif
-  if(name.startsWith('crm.')||name.startsWith('devis.')){
-    setGlobalD(name,val);render();return;
+  if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')){
+    setGlobalD(name,val);
+    // BPU : lier un contact CRM pré-remplit le nom client affiché
+    if(/^bpu\.list\.\d+\.contactId$/.test(name)){
+      const b=state.bpuData.list[parseInt(name.split('.')[2])];
+      const ct=state.crmData.contacts.find(c=>c.id===val);
+      if(b&&ct){b.client=ct.nom+(ct.societe?' ('+ct.societe+')':'');saveBpu();}
+    }
+    render();return;
   }
   if(!getActive())return;
   setD(name,val);
@@ -1579,7 +1624,13 @@ document.addEventListener('click',e=>{
     }
     if(action==='devisFromContact'){
       const ct=state.crmData.contacts.find(c=>c.id===id);
-      newDevis(ct?ct.nom+(ct.societe?' ('+ct.societe+')':''):'');
+      const clientStr=ct?ct.nom+(ct.societe?' ('+ct.societe+')':''):'';
+      const bpu=ct?bpusForContact(ct).find(b=>(b.lignes||[]).some(l=>l.designation)):null;
+      if(bpu&&confirm('Ce contact a le BPU « '+(bpu.nom||'BPU')+' ». Créer le devis pré-rempli avec ses lignes ?')){
+        newDevis(clientStr,{contactId:ct.id,lignes:bpuLinesToDevis(bpu)});
+      }else{
+        newDevis(clientStr,ct?{contactId:ct.id}:null);
+      }
       return;
     }
     // ── Devis ──
@@ -1609,7 +1660,7 @@ document.addEventListener('click',e=>{
       return;
     }
     if(action==='addBibLine'){
-      const item=BIB_CADENCES[parseInt(btn.dataset.bib)];
+      const item=getBib()[parseInt(btn.dataset.bib)];
       const dv=state.devisData.list.find(d=>d.id===state.devisId);
       if(item&&dv){
         const ligne={designation:item.d+(item.s?' — '+item.s:''),qte:'',unite:item.u,
@@ -1623,6 +1674,28 @@ document.addEventListener('click',e=>{
       }
       return;
     }
+    if(action==='toggleBibForm'){state.bibFormOpen=!state.bibFormOpen;render();return;}
+    if(action==='addBibRef'){
+      const g=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+      const d=g('bibref-d');
+      if(!d){toast('Indiquez au moins une désignation.');const el=document.getElementById('bibref-d');if(el)el.focus();return;}
+      const ref={l:g('bibref-l')||'Perso',d:d,s:g('bibref-s'),u:g('bibref-u')||'u',
+        t:n(g('bibref-t')),p:n(g('bibref-p')),o:'Perso',user:true};
+      state.bibUser.unshift(ref);
+      state.bibFormOpen=false;
+      // Affiche la nouvelle référence dans les résultats de recherche
+      if((state.bibQuery||'').trim().length<2)state.bibQuery=d;
+      saveBib();render();
+      toast('Référence ajoutée à la bibliothèque.');
+      return;
+    }
+    if(action==='delBibRef'){
+      const k=parseInt(btn.dataset.bib);
+      if(k>=0&&k<state.bibUser.length&&confirm('Supprimer cette référence perso de la bibliothèque ?')){
+        state.bibUser.splice(k,1);saveBib();render();
+      }
+      return;
+    }
     if(action==='delDevisLigne'){
       const dv=state.devisData.list.find(d=>d.id===state.devisId);
       if(dv){dv.lignes.splice(idx,1);saveDevis();render();}
@@ -1630,6 +1703,79 @@ document.addEventListener('click',e=>{
     }
     if(action==='exportDevis'){exportDevisPdf(id);return;}
     if(action==='devisToChantier'){devisToChantier(id);return;}
+    // Devis : importer un BPU du client dans le devis courant
+    if(action==='importBpuToDevis'){
+      const dv=state.devisData.list.find(d=>d.id===state.devisId);
+      const b=state.bpuData.list.find(x=>x.id===btn.dataset.bpu);
+      if(dv&&b){
+        const lignes=bpuLinesToDevis(b);
+        if(!lignes.length){toast('Ce BPU ne contient aucune ligne.');return;}
+        // conserve les lignes déjà remplies, remplace celles vides
+        const kept=(dv.lignes||[]).filter(l=>l.designation||n(l.qte)||n(l.pu));
+        dv.lignes=kept.concat(lignes);
+        saveDevis();render();
+        toast(lignes.length+' ligne(s) importée(s) du BPU.');
+      }
+      return;
+    }
+    if(action==='addBpuLineToDevis'){
+      const dv=state.devisData.list.find(d=>d.id===state.devisId);
+      const b=state.bpuData.list.find(x=>x.id===btn.dataset.bpu);
+      const l=b&&b.lignes?b.lignes[parseInt(btn.dataset.idx)]:null;
+      if(dv&&l){
+        const ligne={designation:l.designation,qte:'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'};
+        const empty=dv.lignes.findIndex(x=>!x.designation&&!n(x.qte)&&!n(x.pu));
+        if(empty>=0)dv.lignes[empty]=ligne;else dv.lignes.push(ligne);
+        saveDevis();render();
+      }
+      return;
+    }
+    // ── BPU ──
+    if(action==='addBpu'){newBpu();return;}
+    if(action==='openBpu'){state.bpuId=id;render();return;}
+    if(action==='closeBpu'){state.bpuId=null;render();return;}
+    if(action==='bpuFromContact'){
+      const ct=state.crmData.contacts.find(c=>c.id===id);
+      newBpu(ct?ct.nom+(ct.societe?' ('+ct.societe+')':''):'',ct?ct.id:'');
+      return;
+    }
+    if(action==='delBpu'){
+      if(confirm('Supprimer ce BPU ?')){
+        state.bpuData.list=state.bpuData.list.filter(b=>b.id!==id);
+        if(state.bpuId===id)state.bpuId=null;
+        saveBpu();render();
+      }
+      return;
+    }
+    if(action==='dupBpu'){
+      const src=state.bpuData.list.find(b=>b.id===id);
+      if(src){
+        const cp=JSON.parse(JSON.stringify(src));
+        cp.id='bp'+Date.now();cp.nom=(src.nom||'BPU')+' (copie)';cp.date=todayISO();
+        state.bpuData.list.unshift(cp);saveBpu();render();
+      }
+      return;
+    }
+    if(action==='addBpuLigne'){
+      const b=state.bpuData.list.find(x=>x.id===state.bpuId);
+      if(b){b.lignes.push({designation:'',unite:'',pu:'',tva:'20'});saveBpu();render();}
+      return;
+    }
+    if(action==='delBpuLigne'){
+      const b=state.bpuData.list.find(x=>x.id===state.bpuId);
+      if(b){b.lignes.splice(idx,1);saveBpu();render();}
+      return;
+    }
+    if(action==='exportBpu'){exportBpuPdf(id);return;}
+    if(action==='bpuToDevis'){
+      const b=state.bpuData.list.find(x=>x.id===id);
+      if(!b)return;
+      const lignes=bpuLinesToDevis(b);
+      if(!lignes.length){toast('Ce BPU ne contient aucune ligne à convertir.');return;}
+      state.bpuId=null;
+      newDevis(b.client||'',{contactId:b.contactId||'',lignes});
+      return;
+    }
     // ── Recherche globale / notifications / exports ──
     if(action==='searchGo'){searchGo(parseInt(btn.dataset.sr));return;}
     if(action==='toggleNotif'){state.notifOpen=!state.notifOpen;state.accountOpen=false;render();return;}
@@ -3187,6 +3333,7 @@ function renderHub(){
   const nbCt=state.crmData.contacts.filter(c=>c.nom).length;
   const dvs=state.devisData.list;
   const dvTot=dvs.reduce((s,d)=>s+devisTotals(d).ht,0);
+  const nbBpu=state.bpuData.list.length;
   const hello=state.account.connected&&state.account.name?`Bonjour ${esc(state.account.name.split(' ')[0])} 👋`:'Bienvenue 👋';
   const card=(screen,icon,color,bg,name,desc,stat)=>`
     <div class="hub-card" data-screen="${screen}">
@@ -3209,6 +3356,9 @@ function renderHub(){
         ${card('devis',ico.devis,'#e76500','#fff3e0','Création de devis',
           'Rédigez vos devis (lignes, TVA, totaux), exportez en PDF et transformez-les en intervention.',
           dvs.length?dvs.length+' devis · '+eurRaw(dvTot)+' HT':'Créer un devis')}
+        ${card('bpu',ico.list,'#6c4bb6','#efe9fb','Bordereaux BPU',
+          'Vos bordereaux de prix unitaires par client, réutilisables en un clic pour générer un devis.',
+          nbBpu?nbBpu+' BPU'+(nbBpu>1?'s':''):'Créer un BPU')}
       </div>
     </div>
   `;
@@ -3240,7 +3390,7 @@ function renderCRM(){
     ['Clients actifs',all.filter(c=>c.statut==='Client actif').length,'var(--pos)'],
     ['À relancer',all.filter(c=>c.statut==='À contacter'||c.statut==='Relancé').length,'var(--warn)'],
   ];
-  const cards=list.map(({ct,i})=>`
+  const cards=list.map(({ct,i})=>{const nbpu=bpusForContact(ct).length;return`
     <div class="ck-card">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div class="acc-avatar" style="width:38px;height:38px;font-size:13px;background:${ct.type==='Client'||ct.statut==='Client actif'?'var(--pos)':'var(--acc)'}">${esc((ct.nom||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()||'?')}</div>
@@ -3257,12 +3407,13 @@ function renderCRM(){
         <div class="form-field"><label class="form-label">Dernier contact</label><input class="form-input" type="date" name="crm.contacts.${i}.dernierContact" value="${ct.dernierContact||''}"></div>
         <div class="form-field" style="grid-column:1/-1"><label class="form-label">Notes</label><input class="form-input" type="text" name="crm.contacts.${i}.notes" value="${esc(ct.notes)}" placeholder="Historique, besoins, relance prévue…"></div>
       </div>
-      ${(ct.tel||ct.email)?`<div style="display:flex;gap:8px;margin-top:10px">
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         ${ct.tel?`<a class="btn btn-ghost btn-sm" href="tel:${esc(ct.tel)}" style="text-decoration:none">📞 Appeler</a>`:''}
         ${ct.email?`<a class="btn btn-ghost btn-sm" href="mailto:${esc(ct.email)}" style="text-decoration:none">✉️ E-mail</a>`:''}
         <button class="btn btn-ghost btn-sm" data-action="devisFromContact" data-id="${ct.id}">${svgIcon(ico.devis,13)} Devis</button>
-      </div>`:''}
-    </div>`).join('');
+        <button class="btn btn-ghost btn-sm" data-action="bpuFromContact" data-id="${ct.id}" title="Bordereau de prix pour ce client">${svgIcon(ico.list,13)} BPU${nbpu?` (${nbpu})`:''}</button>
+      </div>
+    </div>`;}).join('');
   return`
     <div class="page-head"><h1 class="page-title">Mon CRM</h1>${csvBtn('crm')}</div>
     <div class="kpi-strip" style="grid-template-columns:repeat(4,1fr)">
@@ -3298,11 +3449,11 @@ function devisTotals(dv){
   });
   return{ht,tva,ttc:ht+tva};
 }
-function newDevis(client){
+function newDevis(client,prefill){
   const yr=new Date().getFullYear();
   const num='DEV-'+yr+'-'+String(state.devisData.list.length+1).padStart(3,'0');
-  const dv={id:'dv'+Date.now(),num,client:client||'',date:todayISO(),validite:'30',statut:'Brouillon',notes:'',
-    lignes:Array.from({length:4},()=>({designation:'',qte:'',unite:'',pu:'',tva:'20'}))};
+  const lignes=prefill&&prefill.lignes&&prefill.lignes.length?prefill.lignes:Array.from({length:4},()=>({designation:'',qte:'',unite:'',pu:'',tva:'20'}));
+  const dv={id:'dv'+Date.now(),num,client:client||'',contactId:(prefill&&prefill.contactId)||'',date:todayISO(),validite:'30',statut:'Brouillon',notes:'',lignes};
   state.devisData.list.unshift(dv);
   state.devisId=dv.id;
   saveDevis();
@@ -3393,19 +3544,41 @@ function renderDevis(){
       <td class="auto" title="${n(l.tps)>0?'Cadence base : '+num2(n(l.tps))+' h/'+esc(l.unite||'u')+(coeff!==1?' × coeff '+coeff:''):'Ligne libre — pas de cadence associée'}" style="color:var(--acc);font-weight:600;white-space:nowrap">${hL>0?hL.toFixed(1)+' h':'—'}</td>
       <td><button class="btn btn-danger btn-icon btn-sm" data-action="delDevisLigne" data-idx="${j}">${svgIcon(ico.trash,13)}</button></td>
     </tr>`;}).join('');
-    // Bibliothèque : recherche
+    // Bibliothèque : recherche (références perso + base intégrée)
+    const ALLBIB=getBib();
+    const nUser=state.bibUser.length;
     const bq=(state.bibQuery||'').toLowerCase().trim();
     const bibRes=bq.length>=2
-      ?BIB_CADENCES.map((it,k)=>({it,k})).filter(({it})=>`${it.l} ${it.d} ${it.s} ${it.u}`.toLowerCase().includes(bq)).slice(0,25)
+      ?ALLBIB.map((it,k)=>({it,k})).filter(({it})=>`${it.l} ${it.d} ${it.s} ${it.u}`.toLowerCase().includes(bq)).slice(0,25)
       :[];
     const bibRows=bibRes.map(({it,k})=>`
       <div class="doc-row" style="padding:8px 10px;margin-bottom:6px">
         <div class="doc-info">
-          <div class="doc-name" style="font-size:13px">${esc(it.d)}${it.s?` <span style="color:var(--sub);font-weight:400">— ${esc(it.s)}</span>`:''}</div>
+          <div class="doc-name" style="font-size:13px">${it.user?`<span class="badge badge-blue" style="margin-right:6px">Perso</span>`:''}${esc(it.d)}${it.s?` <span style="color:var(--sub);font-weight:400">— ${esc(it.s)}</span>`:''}</div>
           <div class="doc-meta">${esc(it.l)} · ${esc(it.u)}${it.t>0?` · ${num2(it.t)} h/${esc(it.u)} (≈ ${Math.round(7.5/it.t)} ${esc(it.u)}/j)`:''}${it.p>0?` · <strong>${eurRaw(it.p)}/${esc(it.u)}</strong> fourn.`:''}</div>
         </div>
         <button class="btn btn-primary btn-sm" data-action="addBibLine" data-bib="${k}">${svgIcon(ico.plus,13)} Ajouter</button>
+        ${it.user?`<button class="btn btn-danger btn-icon btn-sm" data-action="delBibRef" data-bib="${k}" title="Supprimer cette référence perso">${svgIcon(ico.trash,13)}</button>`:''}
       </div>`).join('');
+    // BPU correspondant au client de ce devis
+    const dvBpus=bpusForDevis(dv).filter(b=>(b.lignes||[]).some(l=>l.designation));
+    const bpuPanel=dvBpus.length?`
+      <div class="card" style="margin-bottom:14px;border:1px solid var(--acc)">
+        <div class="card-title">${svgIcon(ico.list,15)} BPU du client${dv.client?` — ${esc(dv.client)}`:''}</div>
+        ${dvBpus.map(b=>`
+          <div style="margin-bottom:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <strong style="font-size:13px">${esc(b.nom||'BPU')} <span class="note" style="font-weight:400">— ${(b.lignes||[]).filter(l=>l.designation).length} ligne(s)</span></strong>
+              <button class="btn btn-primary btn-sm" data-action="importBpuToDevis" data-bpu="${b.id}">${svgIcon(ico.plus,13)} Importer tout le BPU</button>
+            </div>
+            ${(b.lignes||[]).map((l,li)=>({l,li})).filter(({l})=>l.designation).map(({l,li})=>`
+              <div class="doc-row" style="padding:6px 10px;margin-bottom:5px">
+                <div class="doc-info"><div class="doc-name" style="font-size:13px">${esc(l.designation)}</div>
+                <div class="doc-meta">${esc(l.unite||'u')}${n(l.pu)>0?` · <strong>${eurRaw(n(l.pu))}</strong>/${esc(l.unite||'u')}`:''} · TVA ${esc(l.tva||'20')}%</div></div>
+                <button class="btn btn-ghost btn-sm" data-action="addBpuLineToDevis" data-bpu="${b.id}" data-idx="${li}">${svgIcon(ico.plus,13)} Ajouter</button>
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>`:'';
     return`
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" data-action="closeDevis">← Tous les devis</button>
@@ -3429,9 +3602,28 @@ function renderDevis(){
         </div>
       </div>
 
+      ${bpuPanel}
       <!-- Bibliothèque cadences & prix -->
       <div class="card" style="margin-bottom:14px">
-        <div class="card-title">Bibliothèque cadences & prix <span class="note" style="font-size:11px;margin-left:6px">— étanchéité · bardage · couverture (${BIB_CADENCES.length} ouvrages)</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <div class="card-title" style="margin:0">Bibliothèque cadences & prix <span class="note" style="font-size:11px;margin-left:6px">— étanchéité · bardage · couverture (${ALLBIB.length} ouvrages${nUser?` · ${nUser} perso`:''})</span></div>
+          <button class="btn btn-ghost btn-sm" data-action="toggleBibForm">${svgIcon(ico.plus,13)} ${state.bibFormOpen?'Fermer':'Ajouter une référence'}</button>
+        </div>
+        ${state.bibFormOpen?`
+        <div class="ck-card" style="margin-bottom:10px">
+          <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+            <div class="form-field" style="grid-column:span 2"><label class="form-label">Désignation *</label><input class="form-input" type="text" id="bibref-d" placeholder="Ex : Étanchéité PVC 1,5 mm"></div>
+            <div class="form-field"><label class="form-label">Famille / lot</label><input class="form-input" type="text" id="bibref-l" placeholder="Ex : Étanchéité"></div>
+            <div class="form-field"><label class="form-label">Support / précision</label><input class="form-input" type="text" id="bibref-s" placeholder="Ex : béton"></div>
+            <div class="form-field"><label class="form-label">Unité</label><input class="form-input" type="text" id="bibref-u" placeholder="m²"></div>
+            <div class="form-field"><label class="form-label">Cadence (h/u)</label><input class="form-input" type="number" step="0.001" id="bibref-t" placeholder="0"></div>
+            <div class="form-field"><label class="form-label">Prix fourn. (€/u)</label><input class="form-input" type="number" step="0.01" id="bibref-p" placeholder="0"></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px">
+            <button class="btn btn-primary btn-sm" data-action="addBibRef">${svgIcon(ico.plus,13)} Enregistrer la référence</button>
+          </div>
+          <div class="note" style="margin-top:6px">La cadence (h/u) sert à estimer les heures de main d'œuvre. Le prix fourniture est indicatif et pré-remplit le PU HT du devis.</div>
+        </div>`:''}
         <div style="position:relative;margin-bottom:8px">
           ${svgIcon(ico.search,15,'style="position:absolute;left:10px;top:11px;color:var(--sub)"')}
           <input class="form-input" type="text" id="bib-search" placeholder="Rechercher un ouvrage (ex : pare-vapeur, bardage, relevé, dépose…)" value="${esc(state.bibQuery||'')}" style="padding-left:32px">
@@ -3501,6 +3693,114 @@ function renderDevis(){
   `;
 }
 
+// ═══════════ BPU — Bordereaux de Prix Unitaires ═══════════
+function newBpu(client,contactId){
+  const b={id:'bp'+Date.now(),nom:client?('BPU '+client):('BPU '+(state.bpuData.list.length+1)),
+    client:client||'',contactId:contactId||'',date:todayISO(),notes:'',
+    lignes:Array.from({length:4},()=>({designation:'',unite:'',pu:'',tva:'20'}))};
+  state.bpuData.list.unshift(b);
+  state.bpuId=b.id;
+  saveBpu();
+  state.screen='bpu';render();
+}
+function exportBpuPdf(id){
+  const b=state.bpuData.list.find(x=>x.id===id);if(!b)return;
+  const a=state.account||{};
+  const lignes=(b.lignes||[]).filter(l=>l.designation);
+  const body=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px">
+      <div><h1 style="color:#0070f2">BORDEREAU DE PRIX</h1>
+      <div class="muted">${esc(b.nom||'')}${b.date?' · '+fmtDateFR(b.date):''}</div></div>
+      <div style="text-align:right"><strong>${esc(a.societe||a.name||'Votre entreprise')}</strong><br>
+      <span class="muted">${esc(a.name||'')}${a.email?'<br>'+esc(a.email):''}</span></div>
+    </div>
+    <div class="field" style="margin-bottom:14px"><div class="label">Client</div><div class="block">${esc(b.client||'—')}</div></div>
+    <table><thead><tr><th>Désignation</th><th>Unité</th><th>PU HT</th><th>TVA</th></tr></thead><tbody>
+    ${lignes.map(l=>`<tr><td>${esc(l.designation)}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td></tr>`).join('')||'<tr><td colspan="4" class="muted">Aucune ligne</td></tr>'}
+    </tbody></table>
+    ${b.notes?`<h2>Conditions</h2><div class="block">${esc(b.notes)}</div>`:''}
+    <div style="margin-top:24px" class="muted">Prix unitaires hors taxes — établi le ${fmtDateFR(todayISO())}.</div>`;
+  openPrint('BPU '+(b.nom||''),body);
+}
+function renderBpu(){
+  const list=state.bpuData.list;
+  const contacts=state.crmData.contacts.filter(c=>c.nom);
+  const idx=list.findIndex(x=>x.id===state.bpuId);
+  // ── Éditeur ──
+  if(idx>=0){
+    const b=list[idx];
+    const t=bpuTotals(b);
+    const ctOpts=`<option value="">— aucun —</option>`+contacts.map(c=>`<option value="${c.id}"${b.contactId===c.id?' selected':''}>${esc(c.nom+(c.societe?' ('+c.societe+')':''))}</option>`).join('');
+    const ligneRows=(b.lignes||[]).map((l,j)=>`<tr>
+      <td><input type="text" name="bpu.list.${idx}.lignes.${j}.designation" value="${esc(l.designation)}" style="min-width:200px;width:100%" placeholder="Prestation / fourniture"></td>
+      <td><input type="text" name="bpu.list.${idx}.lignes.${j}.unite" value="${esc(l.unite)}" style="width:60px" placeholder="u"></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="bpu.list.${idx}.lignes.${j}.pu" value="${l.pu||''}" style="width:90px" placeholder="0"></div></td>
+      <td><input type="number" name="bpu.list.${idx}.lignes.${j}.tva" value="${l.tva||'20'}" style="width:52px"> %</td>
+      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delBpuLigne" data-idx="${j}">${svgIcon(ico.trash,13)}</button></td>
+    </tr>`).join('');
+    return`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" data-action="closeBpu">← Tous les BPU</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" data-action="exportBpu" data-id="${b.id}">${svgIcon(ico.pdf,13)} PDF</button>
+          <button class="btn btn-primary btn-sm" data-action="bpuToDevis" data-id="${b.id}">${svgIcon(ico.devis,13)} Créer un devis</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
+          <div class="form-field" style="grid-column:span 2"><label class="form-label">Nom du BPU</label><input class="form-input" type="text" name="bpu.list.${idx}.nom" value="${esc(b.nom)}" placeholder="Ex : BPU 2026 — Mairie de…"></div>
+          <div class="form-field" style="grid-column:span 2"><label class="form-label">Prospect / client (CRM)</label><select class="form-select" name="bpu.list.${idx}.contactId">${ctOpts}</select></div>
+          <div class="form-field" style="grid-column:span 2"><label class="form-label">Client (affiché)</label><input class="form-input" type="text" name="bpu.list.${idx}.client" value="${esc(b.client)}" list="crm-clients-bpu" placeholder="Nom du client"><datalist id="crm-clients-bpu">${contacts.map(c=>`<option value="${esc(c.nom+(c.societe?' ('+c.societe+')':''))}">`).join('')}</datalist></div>
+          <div class="form-field"><label class="form-label">Date</label><input class="form-input" type="date" name="bpu.list.${idx}.date" value="${b.date||''}"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title">Lignes du bordereau</div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Désignation</th><th>Unité</th><th>PU HT</th><th>TVA</th><th></th></tr></thead>
+          <tbody>${ligneRows}</tbody>
+        </table></div>
+        <button class="add-row-btn" data-action="addBpuLigne">${svgIcon(ico.plus,13)} Ajouter une ligne</button>
+      </div>
+      <div class="ck-card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px"><span style="color:var(--sub)">Total HT (indicatif, qté 1)</span><strong>${eurRaw(t.ht)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0 2px;font-size:15px"><strong>Total TTC</strong><strong style="color:var(--acc)">${eurRaw(t.ttc)}</strong></div>
+      </div>
+      <div class="card">
+        <div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" name="bpu.list.${idx}.notes" placeholder="Conditions, période de validité des prix…">${esc(b.notes)}</textarea></div>
+      </div>
+    `;
+  }
+  // ── Liste ──
+  const cards=list.map(b=>{
+    const t=bpuTotals(b);const nl=(b.lignes||[]).filter(l=>l.designation).length;
+    return`<div class="doc-row" style="cursor:pointer" data-action="openBpu" data-id="${b.id}">
+      <div class="doc-ico">${svgIcon(ico.list,18)}</div>
+      <div class="doc-info">
+        <div class="doc-name">${esc(b.nom||'BPU')}${b.client?' · '+esc(b.client):''}</div>
+        <div class="doc-meta">${fmtDateFR(b.date)} · ${nl} ligne(s)${t.ht>0?' · '+eurRaw(t.ht)+' HT (qté 1)':''}</div>
+      </div>
+      <button class="btn btn-ghost btn-icon btn-sm" data-action="bpuToDevis" data-id="${b.id}" title="Créer un devis">${svgIcon(ico.devis,13)}</button>
+      <button class="btn btn-ghost btn-icon btn-sm" data-action="exportBpu" data-id="${b.id}" title="PDF">${svgIcon(ico.pdf,13)}</button>
+      <button class="btn btn-ghost btn-icon btn-sm" data-action="dupBpu" data-id="${b.id}" title="Dupliquer">${svgIcon(ico.copy,13)}</button>
+      <button class="btn btn-danger btn-icon btn-sm" data-action="delBpu" data-id="${b.id}">${svgIcon(ico.trash,13)}</button>
+    </div>`;
+  }).join('');
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">Bordereaux de prix (BPU)</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${csvBtn('bpu')}
+        <button class="btn btn-primary" data-action="addBpu">${svgIcon(ico.plus,14)} Nouveau BPU</button>
+      </div>
+    </div>
+    <div class="ck-card" style="margin-bottom:14px;color:var(--sub);font-size:13px">
+      Un BPU est votre grille de prix unitaires pour un client. Liez-le à un prospect du CRM : lors d'un devis « depuis un client », ses lignes vous seront automatiquement proposées.
+    </div>
+    ${cards||`<div class="ck-card" style="text-align:center;color:var(--sub);padding:30px">Aucun BPU. Cliquez « Nouveau BPU » pour commencer.</div>`}
+  `;
+}
+
 // ═══════════ Mobile nav & FAB ═══════════
 const MOBILE_NAV=[
   {screen:'home',icon:ico.home,label:'Accueil'},
@@ -3514,7 +3814,7 @@ function renderMobileNav(){
   // Hub : page de sélection plein écran, pas de barre
   if(state.screen==='hub'){el.innerHTML='';return;}
   // Écrans applications : barre Menu / Chantiers / CRM / Devis
-  if(['portfolio','crm','devis'].includes(state.screen)){
+  if(['portfolio','crm','devis','bpu'].includes(state.screen)){
     el.innerHTML=APPS_NAV.map(it=>`<button class="${state.screen===it.screen?'active':''}" data-screen="${it.screen}">${svgIcon(it.icon,22)}<span>${it.label}</span></button>`).join('');
     return;
   }
@@ -3531,6 +3831,7 @@ function renderFab(){
   else if(state.screen==='photos'){act='fabPhoto';icon=ico.camera;}
   else if(state.screen==='crm'){act='fabCrm';}
   else if(state.screen==='devis'&&!state.devisId){act='addDevis';}
+  else if(state.screen==='bpu'&&!state.bpuId){act='addBpu';}
   else{slot.innerHTML='';return;}
   slot.innerHTML=`<button class="fab" data-action="${act}" title="Ajouter" aria-label="Ajouter">${svgIcon(icon,24)}</button>`;
 }
@@ -3549,7 +3850,7 @@ function render(){
     if(el){try{el.focus({preventScroll:true});if(car!=null&&el.setSelectionRange)el.setSelectionRange(car,car);}catch(e){}}
   }
 }
-const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
+const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',bpu:'BPU',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
 function renderMain(){
   applyTheme();
   document.title=(SCREEN_TITLES[state.screen]?SCREEN_TITLES[state.screen]+' — ':'')+'Suivi de Chantier Pro';
@@ -3580,6 +3881,7 @@ function renderMain(){
     });
     renderFab();return;
   }
+  if(state.screen==='bpu'){main.innerHTML=renderBpu();renderFab();return;}
   if(state.screen==='portfolio'){
     main.innerHTML=renderPortfolio();
     const pfs=document.getElementById('pf-search');
@@ -3711,6 +4013,7 @@ const APPS_NAV=[
   {screen:'portfolio',icon:ico.brief,label:'Chantiers'},
   {screen:'crm',icon:ico.crm,label:'CRM'},
   {screen:'devis',icon:ico.devis,label:'Devis'},
+  {screen:'bpu',icon:ico.list,label:'BPU'},
 ];
 
 const NAV_ITEMS=[
