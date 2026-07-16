@@ -709,6 +709,7 @@ const CRM_KEY='suivi_chantier_crm_v1';
 const DEVIS_KEY='suivi_chantier_devis_v1';
 const BIB_KEY='suivi_chantier_bib_v1';
 const BPU_KEY='suivi_chantier_bpu_v1';
+const KPI_KEY='suivi_chantier_kpi_v1';
 const BACKUP_KEY='suivi_chantier_last_backup';
 let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
@@ -716,6 +717,7 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   crmData:{contacts:[]},crmQuery:'',
   devisData:{list:[]},devisId:null,assistantOpen:false,
   bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
+  kpiData:{aoRecus:'',aoDeposes:'',satisfaction:'',periode:''},kpiOpen:true,
   bibUser:[],bibFormOpen:false,
   searchQ:'',notifOpen:false,lastSaved:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
@@ -751,12 +753,14 @@ function load(){
   try{const v=JSON.parse(localStorage.getItem(DEVIS_KEY)||'null');if(v&&Array.isArray(v.list))state.devisData=v;}catch(e){}
   try{const b=JSON.parse(localStorage.getItem(BIB_KEY)||'null');if(b&&Array.isArray(b))state.bibUser=b;}catch(e){}
   try{const p=JSON.parse(localStorage.getItem(BPU_KEY)||'null');if(p&&Array.isArray(p.list))state.bpuData=p;}catch(e){}
+  try{const k=JSON.parse(localStorage.getItem(KPI_KEY)||'null');if(k&&typeof k==='object')state.kpiData=Object.assign(state.kpiData,k);}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
 function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
 function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.devisData));markSaved();}catch(e){}}
 function saveBib(){try{localStorage.setItem(BIB_KEY,JSON.stringify(state.bibUser));markSaved();}catch(e){}}
 function saveBpu(){try{localStorage.setItem(BPU_KEY,JSON.stringify(state.bpuData));markSaved();}catch(e){}}
+function saveKpi(){try{localStorage.setItem(KPI_KEY,JSON.stringify(state.kpiData));markSaved();}catch(e){}}
 // Bibliothèque complète : références perso (en tête) + base intégrée
 function getBib(){return state.bibUser.concat(BIB_CADENCES);}
 // ─── BPU (Bordereau de Prix Unitaires) liés aux prospects/clients ───────────
@@ -781,15 +785,15 @@ function bpuLinesToDevis(b){
 // Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
 function setGlobalD(path,value){
   const parts=path.split('.');
-  const root=parts.shift(); // 'crm' | 'devis' | 'bpu'
-  let obj=root==='crm'?state.crmData:root==='bpu'?state.bpuData:state.devisData;
+  const root=parts.shift(); // 'crm' | 'devis' | 'bpu' | 'kpi'
+  let obj=root==='crm'?state.crmData:root==='bpu'?state.bpuData:root==='kpi'?state.kpiData:state.devisData;
   for(let i=0;i<parts.length-1;i++){
     const k=parts[i];const nk=parts[i+1];
     if(obj[k]===undefined||obj[k]===null)obj[k]=/^\d+$/.test(nk)?[]:{};
     obj=obj[k];
   }
   obj[parts[parts.length-1]]=value;
-  if(root==='crm')saveCrm();else if(root==='bpu')saveBpu();else saveDevis();
+  if(root==='crm')saveCrm();else if(root==='bpu')saveBpu();else if(root==='kpi')saveKpi();else saveDevis();
 }
 function accountInitials(){
   const nm=(state.account&&state.account.name||'').trim();
@@ -1014,7 +1018,7 @@ function searchGo(i){
 function storageInfo(){
   try{
     let bytes=0;
-    for(const k of[KEY,CRM_KEY,DEVIS_KEY,BIB_KEY,BPU_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
+    for(const k of[KEY,CRM_KEY,DEVIS_KEY,BIB_KEY,BPU_KEY,KPI_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
     const mb=bytes/1048576;
     return'Données locales : '+(mb>=1?mb.toFixed(1).replace('.',',')+' Mo':Math.max(1,Math.round(bytes/1024))+' Ko');
   }catch(e){return''}
@@ -1056,7 +1060,7 @@ function accountEdit(){state.account.connected=false;saveAccount();render();}
 function exportBackup(){
   const data=JSON.stringify({app:'suivi-chantier',version:2,exportedAt:new Date().toISOString(),
     account:state.account,activeId:state.activeId,chantiers:state.chantiers,
-    crm:state.crmData,devis:state.devisData,bib:state.bibUser,bpu:state.bpuData},null,2);
+    crm:state.crmData,devis:state.devisData,bib:state.bibUser,bpu:state.bpuData,kpi:state.kpiData},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
@@ -1074,6 +1078,7 @@ function importBackupData(parsed){
   if(parsed.devis&&Array.isArray(parsed.devis.list)){state.devisData=parsed.devis;saveDevis();}
   if(Array.isArray(parsed.bib)){state.bibUser=parsed.bib;saveBib();}
   if(parsed.bpu&&Array.isArray(parsed.bpu.list)){state.bpuData=parsed.bpu;saveBpu();}
+  if(parsed.kpi&&typeof parsed.kpi==='object'){state.kpiData=Object.assign(state.kpiData,parsed.kpi);saveKpi();}
   save();state.accountOpen=false;state.screen='hub';render();
   alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
@@ -1298,6 +1303,7 @@ function summarize(d){
     const taux=recette>0?marge/recette*100:0;
     return{nom:d.ident.nom||'Sans nom',otp:d.ident.otp,mo:p.client||d.ident.mo,chef:d.ident.chef,
       statut,statutColor,statutBg,marcheActualise:recette,marge,taux,avancement:av,
+      budgetCR:recette,reelEngage:debourse,
       alertCount:marge<0?1:0,retards:0};
   }
 
@@ -1351,7 +1357,8 @@ function summarize(d){
   const avAuto=planTaches.length>0?planTaches.reduce((s,t)=>s+n(t.avancement),0)/planTaches.length:av;
 
   return{nom:d.ident.nom||'Sans nom',otp:d.ident.otp,mo:d.ident.mo,chef:d.ident.chef,
-    statut,statutColor,statutBg,marcheActualise,marge,taux,avancement:avAuto,alertCount,retards};
+    statut,statutColor,statutBg,marcheActualise,marge,taux,avancement:avAuto,
+    budgetCR,reelEngage,alertCount,retards};
 }
 
 function computeAll(d){
@@ -1527,7 +1534,7 @@ document.addEventListener('change',e=>{
   if(!name)return;
   const val=t.type==='checkbox'?t.checked:t.value;
   // Champs des stores globaux (CRM / Devis) — indépendants du chantier actif
-  if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')){
+  if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')||name.startsWith('kpi.')){
     setGlobalD(name,val);
     // BPU : lier un contact CRM pré-remplit le nom client affiché
     if(/^bpu\.list\.\d+\.contactId$/.test(name)){
@@ -1875,6 +1882,7 @@ document.addEventListener('click',e=>{
     if(action==='exportWeekly'){exportWeeklyPdf();return;}
     if(action==='exportSynthese'){exportSynthesePdf();return;}
     if(action==='exportPetite'){exportPetitePdf();return;}
+    if(action==='toggleKpi'){state.kpiOpen=!state.kpiOpen;render();return;}
     if(action==='fabTasks'){const i=document.getElementById('qa-input');if(i){window.scrollTo(0,0);i.focus();}return;}
     if(action==='fabPhoto'){const i=document.querySelector('[data-photo-new]');if(i)i.click();return;}
     if(action==='fabCrm'){const i=document.getElementById('crm-qa');if(i){window.scrollTo(0,0);i.focus();}return;}
@@ -4575,6 +4583,120 @@ function exportPetitePdf(){
   openPrint('Intervention '+(d.ident.nom||''),body);
 }
 
+// ─── KPI de pilotage (chargé d'affaires) — global sur toutes les données ──────
+function computeKPIs(){
+  const chs=state.chantiers;
+  const devis=state.devisData.list;
+  const contacts=state.crmData.contacts.filter(c=>c.nom);
+  const kd=state.kpiData||{};
+  const sums=chs.map(ch=>summarize(ch.d));
+  // Commercial
+  const acc=devis.filter(d=>d.statut==='Accepté');
+  const env=devis.filter(d=>d.statut==='Envoyé');
+  const ref=devis.filter(d=>d.statut==='Refusé');
+  const caDevis=acc.reduce((s,d)=>s+devisTotals(d).ht,0);
+  const portefeuille=sums.reduce((s,x)=>s+x.marcheActualise,0);
+  const sortis=acc.length+env.length+ref.length;
+  const conversion=sortis>0?acc.length/sortis*100:null;
+  const totMarche=sums.reduce((s,x)=>s+x.marcheActualise,0);
+  const totMarge=sums.reduce((s,x)=>s+x.marge,0);
+  const totReel=sums.reduce((s,x)=>s+(x.reelEngage||0),0);
+  const rentaCA=totMarche>0?totMarge/totMarche*100:null;
+  const rentaCout=totReel>0?totMarge/totReel*100:null;
+  const nvxClients=contacts.filter(c=>c.type==='Client'||c.statut==='Client actif').length;
+  const aoR=n(kd.aoRecus),aoD=n(kd.aoDeposes);
+  const tauxReponseAO=aoR>0?Math.min(aoD/aoR*100,100):null;
+  // Technique / gestion
+  let delaisTot=0,delaisOk=0;
+  chs.forEach(ch=>{const d=ch.d;if(d.type!=='petite'&&d.ident.fin&&d.ident.reception){delaisTot++;if(new Date(d.ident.reception)<=new Date(d.ident.fin))delaisOk++;}});
+  const respectDelais=delaisTot>0?delaisOk/delaisTot*100:null;
+  const withBudget=sums.filter(x=>(x.budgetCR||0)>0);
+  const respectBudget=withBudget.length>0?withBudget.filter(x=>(x.reelEngage||0)<=x.budgetCR).length/withBudget.length*100:null;
+  let resTot=0,resLev=0,resDelaiOk=0;
+  chs.forEach(ch=>ch.d.reserves.forEach(r=>{if(r.description){resTot++;if(r.statut==='Levée'){resLev++;if(r.dateLeveeReel&&r.dateLeveePrev&&new Date(r.dateLeveeReel)<=new Date(r.dateLeveePrev))resDelaiOk++;}}}));
+  const conformite=resTot>0?resLev/resTot*100:(chs.length?100:null);
+  const satisfaction=kd.satisfaction!==''&&kd.satisfaction!=null?n(kd.satisfaction):null;
+  // Relationnel
+  const nbContacts=contacts.length;
+  const resolution=resLev>0?resDelaiOk/resLev*100:(resTot>0?0:null);
+  const projetsTot=chs.length;
+  const projetsActifs=sums.filter(x=>x.statut!=='Réceptionné').length;
+  const clientNames={};
+  devis.forEach(d=>{const nm=(d.client||'').trim().toLowerCase();if(nm)clientNames[nm]=(clientNames[nm]||0)+1;});
+  chs.forEach(ch=>{const d=ch.d;const nm=((d.type==='petite'?(d.petite||{}).client:d.ident.mo)||'').trim().toLowerCase();if(nm)clientNames[nm]=(clientNames[nm]||0)+1;});
+  const distinct=Object.keys(clientNames).length;
+  const recurrents=Object.values(clientNames).filter(v=>v>=2).length;
+  const fidelisation=distinct>0?recurrents/distinct*100:null;
+  return{caDevis,portefeuille,conversion,rentaCA,rentaCout,nvxClients,tauxReponseAO,nbDevisAcceptes:acc.length,nbDevisSortis:sortis,
+    respectDelais,respectBudget,conformite,satisfaction,delaisTot,
+    nbContacts,resolution,projetsTot,projetsActifs,fidelisation,recurrents,distinct};
+}
+function renderKpiTile(){
+  const k=computeKPIs();
+  const P=v=>v==null?'—':v.toFixed(1).replace('.',',')+'%';
+  const kd=state.kpiData||{};
+  const cell=(label,val,color,sub)=>`<div class="ck-card" style="padding:10px 12px">
+    <div style="font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px">${label}</div>
+    <div style="font-size:18px;font-weight:700${color?`;color:${color}`:''}">${val}</div>
+    ${sub?`<div style="font-size:11px;color:var(--sub);margin-top:2px">${sub}</div>`:''}
+  </div>`;
+  const grid=inner=>`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:10px">${inner}</div>`;
+  const margeColor=v=>v==null?'':(v<0?'var(--neg)':'var(--pos)');
+  if(!state.kpiOpen){
+    return`<div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div class="card-title" style="margin:0">${svgIcon(ico.spark,15)} Pilotage — KPI chargé d'affaires</div>
+        <button class="btn btn-ghost btn-sm" data-action="toggleKpi">Afficher</button>
+      </div>
+    </div>`;
+  }
+  return`<div class="card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="card-title" style="margin:0">${svgIcon(ico.spark,15)} Pilotage — KPI chargé d'affaires <span class="note" style="font-size:11px;text-transform:none;letter-spacing:0">(global · toutes affaires)</span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input class="form-input" type="text" name="kpi.periode" value="${esc(kd.periode||'')}" placeholder="Période (ex : 2026)" style="width:130px;padding:4px 8px;font-size:12px">
+        <button class="btn btn-ghost btn-sm" data-action="toggleKpi">Masquer</button>
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:6px">💼 Commercial</div>
+    ${grid(
+      cell("CA généré (devis signés)",k.caDevis>0?eurRaw(k.caDevis):'—','var(--acc)',k.nbDevisAcceptes+' devis accepté(s)')+
+      cell("Portefeuille chantiers",k.portefeuille>0?eurRaw(k.portefeuille):'—','',k.projetsTot+' chantier(s)')+
+      cell("Taux de conversion",P(k.conversion),k.conversion!=null&&k.conversion>=50?'var(--pos)':'',k.nbDevisAcceptes+'/'+k.nbDevisSortis+' devis sortis')+
+      cell("Rentabilité moy. / affaire",P(k.rentaCA),margeColor(k.rentaCA),'marge / CA')+
+      cell("Nouveaux clients",k.nvxClients,'var(--acc)','clients actifs')+
+      cell("Réponse appels d'offres",P(k.tauxReponseAO),'',(n(kd.aoDeposes)||0)+'/'+(n(kd.aoRecus)||0)+' AO')
+    )}
+
+    <div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:6px">🛠️ Technique & gestion</div>
+    ${grid(
+      cell("Respect des délais",P(k.respectDelais),k.respectDelais!=null&&k.respectDelais>=80?'var(--pos)':(k.respectDelais!=null?'var(--warn)':''),k.delaisTot+' chantier(s) réceptionné(s)')+
+      cell("Respect du budget",P(k.respectBudget),k.respectBudget!=null&&k.respectBudget>=80?'var(--pos)':(k.respectBudget!=null?'var(--warn)':''),'affaires dans le budget')+
+      cell("Conformité technique",P(k.conformite),k.conformite!=null&&k.conformite>=90?'var(--pos)':'','réserves levées')+
+      cell("Rentabilité / projet",P(k.rentaCout),margeColor(k.rentaCout),'marge / coût')+
+      cell("Satisfaction client",P(k.satisfaction),k.satisfaction!=null&&k.satisfaction>=80?'var(--pos)':'','enquête (à saisir)')
+    )}
+
+    <div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:6px">🤝 Relationnel & organisation</div>
+    ${grid(
+      cell("Contacts commerciaux",k.nbContacts,'','CRM')+
+      cell("Résolution des problèmes",P(k.resolution),k.resolution!=null&&k.resolution>=80?'var(--pos)':'','réserves levées dans les délais')+
+      cell("Projets coordonnés",k.projetsTot,'',k.projetsActifs+' actif(s)')+
+      cell("Fidélisation clients",P(k.fidelisation),k.fidelisation!=null&&k.fidelisation>=30?'var(--pos)':'',k.recurrents+'/'+k.distinct+' clients récurrents')
+    )}
+
+    <div class="ck-card" style="margin-top:4px">
+      <div class="ck-head" style="margin-bottom:8px">Saisie manuelle (données non automatisables)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+        <div class="form-field"><label class="form-label">Appels d'offres reçus</label><input class="form-input" type="number" name="kpi.aoRecus" value="${esc(kd.aoRecus||'')}" placeholder="0"></div>
+        <div class="form-field"><label class="form-label">Offres déposées</label><input class="form-input" type="number" name="kpi.aoDeposes" value="${esc(kd.aoDeposes||'')}" placeholder="0"></div>
+        <div class="form-field"><label class="form-label">Satisfaction client (%)</label><input class="form-input" type="number" name="kpi.satisfaction" value="${esc(kd.satisfaction||'')}" placeholder="0-100"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ─── Home / Cockpit chantier ──────────────────────────────────────────────────
 function renderHome(d,c){
   const s=summarize(d);
@@ -4619,6 +4741,8 @@ function renderHome(d,c){
         <span class="badge ${statusBadge(s.statut)}">${s.statut}</span>
       </div>
     </div>
+
+    ${renderKpiTile()}
 
     <div class="cockpit-grid">
       <div class="ck-card">
