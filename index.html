@@ -625,7 +625,7 @@ function defaults(){
       mainoeuvre:row6(()=>({intervenant:'',date:'',heures:'',taux:'37.3'}))
     },
     ident:{nom:'',otp:'',adresse:'',mo:'',moe:'',bc:'',bet:'',sps:'',inspection:'',
-           ca:'',prevention:'',commerce:'',chef:'',comp1:'',comp2:'',
+           ca:'',prevention:'',commerce:'',chef:'',comp1:'',comp2:'',contactId:'',
            dateOS:'',debut:'',fin:'',reception:'',avancementLot:''},
     contract:{montantHT:'',montantTTC:'',tva:'20',delaiPaiement:'30',
               revision:'non',formule:'',delaiContractuel:''},
@@ -2491,6 +2491,20 @@ function exportCRPdf(){
 
 // ─── Screen renderers ─────────────────────────────────────────────────────────
 
+// Sélecteur d'interlocuteur depuis le CRM (lié au chantier via ident.contactId)
+function interlocuteurField(d){
+  const contacts=state.crmData.contacts.filter(c=>c.nom);
+  const sel=contacts.find(c=>c.id===d.ident.contactId);
+  const opts=`<option value="">— Sélectionner un contact —</option>`+contacts.map(c=>`<option value="${c.id}"${d.ident.contactId===c.id?' selected':''}>${esc(c.nom+(c.societe?' — '+c.societe:''))}</option>`).join('');
+  const coord=sel?`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:4px">${sel.societe?esc(sel.societe)+' · ':''}${sel.tel?`<a href="tel:${esc(sel.tel)}" style="color:var(--acc)">${esc(sel.tel)}</a>`:''}${sel.tel&&sel.email?' · ':''}${sel.email?`<a href="mailto:${esc(sel.email)}" style="color:var(--acc)">${esc(sel.email)}</a>`:''}</div>`
+    :(contacts.length?'':`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:4px">Aucun contact — ajoutez-en dans le CRM.</div>`);
+  return`<div class="form-field">
+    <label class="form-label">Interlocuteur (CRM)</label>
+    <select class="form-select" name="ident.contactId">${opts}</select>
+    ${coord}
+  </div>`;
+}
+
 // Dashboard
 function renderDashboard(d,c){
   const s=summarize(d);
@@ -2544,6 +2558,7 @@ function renderDashboard(d,c){
             <input type="${type}" name="${path}" value="${esc(getVal(d,path))}" class="form-input">
           </div>
         `).join('')}
+        ${interlocuteurField(d)}
         <div class="form-field">
           <label class="form-label">Avancement lot (%)</label>
           <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
@@ -4226,6 +4241,7 @@ function renderPetite(d){
         <div class="form-field"><label class="form-label">Intitulé / chantier</label><input type="text" name="ident.nom" value="${esc(d.ident.nom)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">N° OTP</label><input type="text" name="ident.otp" value="${esc(d.ident.otp)}" class="form-input" placeholder="N° OTP / référence"></div>
         <div class="form-field"><label class="form-label">Client</label><input type="text" name="petite.client" value="${esc(p.client)}" class="form-input"></div>
+        ${interlocuteurField(d)}
         <div class="form-field"><label class="form-label">Adresse</label><input type="text" name="ident.adresse" value="${esc(d.ident.adresse)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Date de début</label><input type="date" name="ident.debut" value="${d.ident.debut||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Date de fin</label><input type="date" name="ident.fin" value="${d.ident.fin||''}" class="form-input"></div>
@@ -4320,6 +4336,7 @@ function exportPetitePdf(){
   const qtyRows=list=>((list||[]).filter(x=>x.designation||n(x.qte)||n(x.pu)).map(x=>`<tr><td>${esc(x.designation)}</td><td style="text-align:right">${num2(x.qte)}</td><td>${esc(x.unite||'')}</td><td style="text-align:right">${eurRaw(n(x.pu))}</td><td style="text-align:right">${eurRaw(lineTot(x))}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">Aucune ligne</td></tr>`);
   const moRows=(p.mainoeuvre||[]).filter(m=>m.intervenant||n(m.heures)).map(m=>`<tr><td>${esc(m.intervenant)}</td><td>${m.date?fmtDateFR(m.date):'—'}</td><td style="text-align:right">${num2(m.heures)} h</td><td style="text-align:right">${eurRaw(n(m.taux))}</td><td style="text-align:right">${eurRaw(n(m.heures)*n(m.taux))}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">Aucune ligne</td></tr>`;
   const docs=(d.documents||[]);
+  const inter=state.crmData.contacts.find(c=>c.id===d.ident.contactId);
   const body=`
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
       <div><h1>${esc(d.ident.nom||'Petite intervention')}</h1>
@@ -4336,6 +4353,7 @@ function exportPetitePdf(){
       <div class="kpi"><span class="muted">Heures</span><b>${num2(totH)} h</b></div>
     </div>
     <h3>Client</h3><div class="block">${esc(p.client||'—')}</div>
+    ${inter?`<h3>Interlocuteur</h3><div class="block">${esc(inter.nom)}${inter.societe?' — '+esc(inter.societe):''}${inter.tel?' · '+esc(inter.tel):''}${inter.email?' · '+esc(inter.email):''}</div>`:''}
     <h2>Fournitures — ${eurRaw(totF)}</h2>
     <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th>Unité</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.fournitures)}</tbody></table>
     <h2>Matériel — ${eurRaw(totM)}</h2>
