@@ -535,10 +535,10 @@ const APP_VERSION='3.0';
 // ─── Utilities ───────────────────────────────────────────────────────────────
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const n=x=>{const v=parseFloat(x);return isNaN(v)?0:v};
-const eur=x=>{const v=n(x);return v===0?'—':v.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})};
-const eurRaw=x=>n(x).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0});
-const pct=x=>{const v=n(x);return v===0?'—':v.toFixed(1)+'%'};
-const num2=x=>{const v=n(x);return v===0?'—':v.toFixed(2)};
+const eur=x=>{const v=n(x);return v===0?'—':v.toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2})};
+const eurRaw=x=>n(x).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2});
+const pct=x=>{const v=n(x);return v===0?'—':v.toFixed(2).replace('.',',')+'%'};
+const num2=x=>{const v=n(x);return v===0?'—':v.toFixed(2).replace('.',',')};
 const svgIcon=(path,size=16,extra='')=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${path}</svg>`;
 
 // Week helpers
@@ -1803,6 +1803,7 @@ document.addEventListener('click',e=>{
     if(action==='exportJournal'){exportJournalPdf();return;}
     if(action==='exportWeekly'){exportWeeklyPdf();return;}
     if(action==='exportSynthese'){exportSynthesePdf();return;}
+    if(action==='exportPetite'){exportPetitePdf();return;}
     if(action==='fabTasks'){const i=document.getElementById('qa-input');if(i){window.scrollTo(0,0);i.focus();}return;}
     if(action==='fabPhoto'){const i=document.querySelector('[data-photo-new]');if(i)i.click();return;}
     if(action==='fabCrm'){const i=document.getElementById('crm-qa');if(i){window.scrollTo(0,0);i.focus();}return;}
@@ -3466,7 +3467,7 @@ function devisToChantier(id){
   const ch=newChantier('petite');
   ch.d.ident.nom=(dv.client?dv.client+' — ':'')+dv.num;
   ch.d.petite.client=dv.client||'';
-  ch.d.petite.montant=String(Math.round(t.ht));
+  ch.d.petite.montant=t.ht.toFixed(2);
   const lignes=(dv.lignes||[]).filter(l=>l.designation).map(l=>({designation:l.designation,qte:l.qte,pu:l.pu}));
   while(lignes.length<3)lignes.push({designation:'',qte:'',pu:''});
   ch.d.petite.fournitures=lignes;
@@ -4207,6 +4208,7 @@ function renderPetite(d){
         <div class="pb-t">${esc(d.ident.nom||'Petite intervention')}</div>
         <div class="pb-s">Fiche d'intervention rapide · fournitures, matériel, main d'œuvre & marge sur une page</div>
       </div>
+      <button class="btn btn-sm" data-action="exportPetite" style="background:rgba(255,255,255,.92);color:var(--acc);font-weight:600;white-space:nowrap">${svgIcon(ico.pdf,13)} Export PDF récap</button>
     </div>
 
     <!-- Récap KPI -->
@@ -4221,6 +4223,7 @@ function renderPetite(d){
     <div class="card" style="margin-bottom:14px">
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div class="form-field"><label class="form-label">Intitulé / chantier</label><input type="text" name="ident.nom" value="${esc(d.ident.nom)}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">N° OTP</label><input type="text" name="ident.otp" value="${esc(d.ident.otp)}" class="form-input" placeholder="N° OTP / référence"></div>
         <div class="form-field"><label class="form-label">Client</label><input type="text" name="petite.client" value="${esc(p.client)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Adresse</label><input type="text" name="ident.adresse" value="${esc(d.ident.adresse)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Montant vendu HT</label><div class="amt-cell"><span class="sym">€</span><input type="number" name="petite.montant" value="${p.montant||''}" class="form-input" placeholder="0"></div></div>
@@ -4272,10 +4275,85 @@ function renderPetite(d){
       ${recette>0?`<div class="prog-bar" style="height:10px;margin-top:6px"><div class="prog-fill" style="width:${Math.max(0,Math.min(taux,100))}%;background:${margeColor}"></div></div>`:''}
     </div>
 
+    <!-- Documents -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin:0">${svgIcon(ico.folder,13)} Documents <span class="note" style="font-size:11px">(${(d.documents||[]).length})</span></div>
+        <label class="btn btn-primary btn-sm" style="cursor:pointer">${svgIcon(ico.plus,13)} Ajouter
+          <input type="file" data-doc-new multiple style="display:none"></label>
+      </div>
+      ${(d.documents||[]).length===0
+        ?`<div class="note">Ajoutez photos, devis signé, bon de commande, PV de réception…</div>`
+        :(d.documents||[]).map((doc,i)=>`<div class="doc-row" style="padding:8px 10px;margin-bottom:6px">
+            <div class="doc-ico">${svgIcon(ico.folder,16)}</div>
+            <div class="doc-info">
+              <div class="doc-name" style="font-size:13px">${doc.src?`<a href="${doc.src}" download="${esc(doc.name)}" style="color:inherit;text-decoration:none">${esc(doc.name)}</a>`:esc(doc.name)}</div>
+              <div class="doc-meta">${fmtDateFR(doc.date)}${doc.size?' · '+Math.round(doc.size/1024)+' Ko':''}${doc.src?'':' · non stocké (trop volumineux)'}</div>
+            </div>
+            <select class="form-select" name="documents.${i}.categorie" style="width:auto;min-width:90px">${['Plan','Devis','CR','Notice','PV','Photo','Autre'].map(v=>`<option${doc.categorie===v?' selected':''}>${v}</option>`).join('')}</select>
+            <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="documents" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+          </div>`).join('')}
+    </div>
+
     <div class="card" style="margin-bottom:14px">
       <div class="form-field"><label class="form-label">Notes</label><textarea class="form-textarea" name="petite.notes" placeholder="Observations, matériaux à prévoir, suite à donner…">${esc(p.notes)}</textarea></div>
     </div>
   `;
+}
+
+// Export PDF récapitulatif d'une petite intervention (toutes les infos)
+function exportPetitePdf(){
+  const ch=getActive();if(!ch||ch.d.type!=='petite'){toast('Ouvrez une petite intervention.');return;}
+  const d=ch.d,p=d.petite||{},a=state.account||{};
+  const lineTot=x=>n(x.qte)*n(x.pu);
+  const totF=(p.fournitures||[]).reduce((s,x)=>s+lineTot(x),0);
+  const totM=(p.materiel||[]).reduce((s,x)=>s+lineTot(x),0);
+  const totH=(p.mainoeuvre||[]).reduce((s,x)=>s+n(x.heures),0);
+  const totMO=(p.mainoeuvre||[]).reduce((s,x)=>s+n(x.heures)*n(x.taux),0);
+  const debourse=totF+totM+totMO;
+  const recette=n(p.montant);
+  const marge=recette-debourse;
+  const taux=recette>0?marge/recette*100:0;
+  const qtyRows=list=>((list||[]).filter(x=>x.designation||n(x.qte)||n(x.pu)).map(x=>`<tr><td>${esc(x.designation)}</td><td style="text-align:right">${num2(x.qte)}</td><td style="text-align:right">${eurRaw(n(x.pu))}</td><td style="text-align:right">${eurRaw(lineTot(x))}</td></tr>`).join('')||`<tr><td colspan="4" class="muted">Aucune ligne</td></tr>`);
+  const moRows=(p.mainoeuvre||[]).filter(m=>m.intervenant||n(m.heures)).map(m=>`<tr><td>${esc(m.intervenant)}</td><td>${m.date?fmtDateFR(m.date):'—'}</td><td style="text-align:right">${num2(m.heures)} h</td><td style="text-align:right">${eurRaw(n(m.taux))}</td><td style="text-align:right">${eurRaw(n(m.heures)*n(m.taux))}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">Aucune ligne</td></tr>`;
+  const docs=(d.documents||[]);
+  const body=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <div><h1>${esc(d.ident.nom||'Petite intervention')}</h1>
+        <div class="muted">${d.ident.otp?'N° OTP : '+esc(d.ident.otp)+' · ':''}${esc(d.ident.adresse||'')}</div>
+        <div class="muted">Fiche d'intervention · éditée le ${fmtDateFR(todayISO())}</div></div>
+      <div style="text-align:right"><strong>${esc(a.societe||a.name||'Votre entreprise')}</strong><br>
+        <span class="muted">${esc(a.name||'')}${a.email?'<br>'+esc(a.email):''}</span></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span class="muted">Montant vendu HT</span><b>${eurRaw(recette)}</b></div>
+      <div class="kpi"><span class="muted">Déboursé total</span><b>${eurRaw(debourse)}</b></div>
+      <div class="kpi"><span class="muted">Marge</span><b>${eurRaw(marge)}${recette>0?' · '+pct(taux):''}</b></div>
+      <div class="kpi"><span class="muted">Heures</span><b>${num2(totH)} h</b></div>
+    </div>
+    <h3>Client</h3><div class="block">${esc(p.client||'—')}</div>
+    <h2>Fournitures — ${eurRaw(totF)}</h2>
+    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.fournitures)}</tbody></table>
+    <h2>Matériel — ${eurRaw(totM)}</h2>
+    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.materiel)}</tbody></table>
+    <h2>Main d'œuvre — ${num2(totH)} h · ${eurRaw(totMO)}</h2>
+    <table><thead><tr><th>Intervenant</th><th>Date</th><th style="text-align:right">Heures</th><th style="text-align:right">Taux</th><th style="text-align:right">Coût</th></tr></thead><tbody>${moRows}</tbody></table>
+    <h2>Récapitulatif financier</h2>
+    <table>
+      <tr><td>Fournitures</td><td style="text-align:right">${eurRaw(totF)}</td></tr>
+      <tr><td>Matériel</td><td style="text-align:right">${eurRaw(totM)}</td></tr>
+      <tr><td>Main d'œuvre (${num2(totH)} h)</td><td style="text-align:right">${eurRaw(totMO)}</td></tr>
+      <tr><td><strong>= Déboursé total</strong></td><td style="text-align:right"><strong>${eurRaw(debourse)}</strong></td></tr>
+      <tr><td>Montant vendu HT</td><td style="text-align:right">${eurRaw(recette)}</td></tr>
+      <tr><td><strong>Marge</strong></td><td style="text-align:right"><strong>${eurRaw(marge)}${recette>0?' · '+pct(taux):''}</strong></td></tr>
+    </table>
+    ${p.notes?`<h2>Notes</h2><div class="block">${esc(p.notes)}</div>`:''}
+    ${docs.length?`<h2>Documents joints (${docs.length})</h2><table><thead><tr><th>Nom</th><th>Catégorie</th><th>Date</th></tr></thead><tbody>${docs.map(dc=>`<tr><td>${esc(dc.name)}</td><td>${esc(dc.categorie||'')}</td><td>${fmtDateFR(dc.date)}</td></tr>`).join('')}</tbody></table>`:''}
+    <div style="margin-top:26px;display:flex;gap:40px">
+      <div style="flex:1"><div class="muted">Fait le ${fmtDateFR(todayISO())}</div></div>
+      <div style="flex:1;border:1px solid #ccc;border-radius:8px;padding:10px;min-height:70px"><span class="muted">Signature :</span></div>
+    </div>`;
+  openPrint('Intervention '+(d.ident.nom||''),body);
 }
 
 // ─── Home / Cockpit chantier ──────────────────────────────────────────────────
