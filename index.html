@@ -619,7 +619,7 @@ function defaults(){
     // Type d'intervention : 'grosse' = suivi complet ; 'petite' = fiche 1 page
     type:'grosse',
     petite:{
-      client:'',montant:'',notes:'',
+      client:'',montant:'',notes:'',statut:'À planifier',
       fournitures:row6(()=>({designation:'',qte:'',unite:'',pu:''})),
       materiel:row6(()=>({designation:'',qte:'',unite:'',pu:''})),
       mainoeuvre:row6(()=>({intervenant:'',date:'',heures:'',taux:'37.3'}))
@@ -1633,10 +1633,12 @@ document.addEventListener('click',e=>{
       newDevis(clientStr,ct?{contactId:ct.id}:null);
       return;
     }
-    if(action==='crmAdvance'){
-      const ct=state.crmData.contacts.find(c=>c.id===id);
-      const next=ct&&crmAdvanceStatut(ct.statut);
-      if(ct&&next){ct.statut=next;ct.dernierContact=todayISO();saveCrm();render();toast('Relation avancée : '+next+'.');}
+    if(action==='petiteAdvance'){
+      const ch=getActive();
+      if(ch&&ch.d.type==='petite'){
+        const next=petiteAdvanceStatut(ch.d.petite.statut||PETITE_STATUTS[0]);
+        if(next){ch.d.petite.statut=next;save();render();toast('Avancement : '+next+'.');}
+      }
       return;
     }
     // ── Devis ──
@@ -1714,29 +1716,42 @@ document.addEventListener('click',e=>{
       const dv=state.devisData.list.find(d=>d.id===state.devisId);
       const el=document.getElementById('metre-text');
       const srcEl=document.getElementById('metre-source');
+      const annexEl=document.getElementById('metre-annexes');
       if(!dv||!el)return;
       const src=srcEl?srcEl.value:'bib';
-      let sourceLines=[];
-      if(src&&src!=='bib'){
-        const b=state.bpuData.list.find(x=>x.id===src);
-        sourceLines=(b?b.lignes:[]).filter(l=>l.designation).map(l=>({designation:l.designation,descriptif:l.descriptif||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20',tps:0}));
-      }else{
-        sourceLines=getBib().map(it=>({designation:it.d+(it.s?' — '+it.s:''),descriptif:'',unite:it.u,pu:it.p>0?String(it.p):'',tva:'20',tps:it.t||0}));
-      }
+      const bib=bibAsLines();
+      let primary=bib;
+      if(src&&src!=='bib'){const b=state.bpuData.list.find(x=>x.id===src);if(b)primary=bpuAsLines(b);}
       const rows=el.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
       if(!rows.length){toast('Collez au moins une ligne de métré.');return;}
       let matched=0,unmatched=0;const newLignes=[];
       rows.forEach(r=>{
         const pm=parseMetreLine(r);
-        const m=matchSourceLine(pm.designation,sourceLines);
+        // cherche d'abord dans la source choisie, puis repli sur la bibliothèque intégrée
+        let m=matchSourceLine(pm.designation,primary);
+        if(!m&&primary!==bib)m=matchSourceLine(pm.designation,bib);
         if(m){matched++;const sl=m.line;newLignes.push({designation:sl.designation,descriptif:sl.descriptif||'',qte:pm.qte||'',unite:sl.unite||pm.unite||'',pu:sl.pu||'',tva:sl.tva||'20',tps:sl.tps||0});}
         else{unmatched++;newLignes.push({designation:pm.designation,descriptif:'',qte:pm.qte||'',unite:pm.unite||'',pu:'',tva:'20'});}
       });
+      // Postes annexes déterminés automatiquement (installation, sécurité, levage, benne…)
+      let annexAdded=0;
+      if(!annexEl||annexEl.checked){
+        const seen=new Set(newLignes.map(l=>l.designation.toLowerCase()));
+        detectAnnexes(rows.join(' ')).forEach(k=>{
+          const a=DEVIS_ANNEXES.find(x=>x.key===k);if(!a)return;
+          const m=matchSourceLine(a.find,primary)||matchSourceLine(a.find,bib);
+          const desig=m?m.line.designation:a.label;
+          if(seen.has(desig.toLowerCase()))return;
+          seen.add(desig.toLowerCase());
+          newLignes.push({designation:desig,descriptif:m?(m.line.descriptif||''):'',qte:'',unite:m?(m.line.unite||a.unite):a.unite,pu:m?(m.line.pu||''):'',tva:'20',tps:m?(m.line.tps||0):0});
+          annexAdded++;
+        });
+      }
       const kept=(dv.lignes||[]).filter(l=>l.designation||n(l.qte)||n(l.pu));
       dv.lignes=kept.concat(newLignes);
       state.assistantOpen=false;
       saveDevis();render();
-      toast('Chiffrage généré : '+matched+' ligne(s) chiffrée(s)'+(unmatched?', '+unmatched+' à compléter':'')+'.');
+      toast('Chiffrage généré : '+matched+' ligne(s) chiffrée(s)'+(unmatched?', '+unmatched+' à compléter':'')+(annexAdded?' · '+annexAdded+' poste(s) annexe(s)':'')+'.');
       return;
     }
     // Devis : importer un BPU du client dans le devis courant
@@ -3450,13 +3465,6 @@ function addContact(nom){
     type:'Prospect',statut:'À contacter',dernierContact:todayISO(),notes:''});
   saveCrm();render();
 }
-// Pipeline d'avancement de la relation (hors « Sans suite »)
-const CRM_PIPELINE=['À contacter','Relancé','Devis envoyé','Client actif'];
-function crmAdvanceStatut(cur){
-  const i=CRM_PIPELINE.indexOf(cur);
-  if(i>=0&&i<CRM_PIPELINE.length-1)return CRM_PIPELINE[i+1];
-  return null;
-}
 function crmQaSubmit(){const i=document.getElementById('crm-qa');if(i&&i.value.trim())addContact(i.value);}
 
 function renderCRM(){
@@ -3471,11 +3479,6 @@ function renderCRM(){
   ];
   const cards=list.map(({ct,i})=>{
     const nbpu=bpusForContact(ct).length;
-    const perdu=ct.statut==='Sans suite';
-    const stIdx=CRM_PIPELINE.indexOf(ct.statut);
-    const prog=perdu?0:(stIdx>=0?(stIdx+1)/CRM_PIPELINE.length*100:0);
-    const nextSt=crmAdvanceStatut(ct.statut);
-    const progColor=perdu?'var(--neg)':(ct.statut==='Client actif'?'var(--pos)':'var(--acc)');
     return`
     <div class="ck-card">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -3483,15 +3486,6 @@ function renderCRM(){
         <input type="text" name="crm.contacts.${i}.nom" value="${esc(ct.nom)}" placeholder="Nom du contact" style="flex:1;font-weight:700;font-size:15px;border:none;background:transparent;min-width:0">
         <span class="pill ${crmStatutClass(ct.statut)}">${esc(ct.statut)}</span>
         <button class="btn btn-danger btn-icon btn-sm" data-action="delContact" data-id="${ct.id}">${svgIcon(ico.trash,13)}</button>
-      </div>
-      <!-- Avancement de la relation -->
-      <div style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px">
-          <span class="form-label" style="margin:0">Avancement — ${perdu?'Sans suite':(stIdx>=0?`étape ${stIdx+1}/${CRM_PIPELINE.length}`:'—')}</span>
-          ${nextSt?`<button class="btn btn-primary btn-sm" data-action="crmAdvance" data-id="${ct.id}" title="Passer à : ${esc(nextSt)}">${svgIcon(ico.checkmark,12)} ${esc(nextSt)} →</button>`
-            :(ct.statut==='Client actif'?`<span class="badge badge-green">✓ Client actif</span>`:'')}
-        </div>
-        <div class="prog-bar" style="height:8px"><div class="prog-fill" style="width:${prog}%;background:${progColor}"></div></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div class="form-field"><label class="form-label">Société</label><input class="form-input" type="text" name="crm.contacts.${i}.societe" value="${esc(ct.societe)}"></div>
@@ -3623,18 +3617,44 @@ function devisHeures(dv){
 // Découpe un texte en mots significatifs (sans accents, >2 lettres)
 function normTokens(s){return String(s||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,' ').split(/\s+/).filter(w=>w.length>2);}
 // Cherche la meilleure ligne source correspondant à un libellé de métré
+// (correspondance par mots, avec sous-chaînes : « couche » ↔ « bicouche »)
 function matchSourceLine(text,sourceLines){
   const qt=normTokens(text);
   if(!qt.length)return null;
-  let best=null,bestScore=0;
+  let best=null,bestScore=0,bestPriced=false;
   sourceLines.forEach(sl=>{
     const st=normTokens(sl.designation+' '+(sl.descriptif||''));
     if(!st.length)return;
-    let common=0;qt.forEach(w=>{if(st.includes(w))common++;});
+    let common=0;
+    qt.forEach(w=>{if(st.some(s=>s===w||(s.length>3&&w.length>3&&(s.includes(w)||w.includes(s)))))common++;});
     const score=common/qt.length;
-    if(score>bestScore){bestScore=score;best=sl;}
+    const priced=n(sl.pu)>0;
+    // à score égal, on privilégie une ligne qui porte un prix
+    if(score>bestScore||(score===bestScore&&priced&&!bestPriced)){bestScore=score;best=sl;bestPriced=priced;}
   });
   return best&&bestScore>=0.34?{line:best,score:bestScore}:null;
+}
+// Convertit une source (bibliothèque / BPU) en lignes chiffrables
+function bibAsLines(){return getBib().map(it=>({designation:it.d+(it.s?' — '+it.s:''),descriptif:'',unite:it.u,pu:it.p>0?String(it.p):'',tva:'20',tps:it.t||0}));}
+function bpuAsLines(b){return(b&&b.lignes?b.lignes:[]).filter(l=>l.designation).map(l=>({designation:l.designation,descriptif:l.descriptif||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20',tps:0}));}
+// Postes annexes de chantier + mots-clés pour retrouver un prix dans la source
+const DEVIS_ANNEXES=[
+  {key:'installation',label:'Installation de chantier / protections / accès',find:'installation de chantier protections acces',unite:'forfait'},
+  {key:'securite',label:'Sécurité collective (garde-corps / ligne de vie)',find:'garde-corps provisoires ligne de vie securite protection collective',unite:'ml'},
+  {key:'levage',label:'Levage / accès (nacelle, monte-matériaux, grue)',find:'nacelle elevatrice monte-materiaux grue chariot telescopique levage',unite:'j'},
+  {key:'benne',label:'Évacuation des déchets (benne / tri)',find:'evacuation dechets benne tri aspiration gravier centre de tri',unite:'forfait'},
+];
+// Déduit les postes annexes pertinents à partir du texte du métré
+function detectAnnexes(text){
+  const t=' '+String(text||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,"")+' ';
+  const roof=/etanch|toiture|couvertur|bardage|releve|membrane|isolation|acrotere|terrasse|bicouche|bac acier|bacacier|zinc|pvc|fpo|couvertine|costiere/.test(t);
+  const depose=/depose|demoli|arrach|evacu|gravier|deblai|desamiant/.test(t);
+  const keys=[];
+  if(roof||depose)keys.push('installation');
+  if(roof)keys.push('securite');
+  if(roof)keys.push('levage');
+  if(roof||depose)keys.push('benne');
+  return keys;
 }
 // Extrait {designation, qte, unite} d'une ligne de métré libre
 function parseMetreLine(r){
@@ -3714,13 +3734,14 @@ function renderDevis(){
           <button class="btn btn-ghost btn-sm" data-action="toggleAssistant">${state.assistantOpen?'Fermer':'Ouvrir'}</button>
         </div>
         ${state.assistantOpen?`
-        <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:8px">Collez votre métré (une prestation par ligne). L'assistant associe chaque ligne à votre bordereau/bibliothèque et remplit quantités + prix (déboursé sec). Formats acceptés : <em>Désignation ; quantité ; unité</em> · <em>250 m² Étanchéité</em> · <em>3 x boîte à eau</em>.</div>
-        <div class="form-field" style="margin-bottom:8px"><label class="form-label">Source des prix</label>
+        <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:8px">Décrivez le métré (une prestation par ligne). L'assistant retrouve la <strong>référence + le prix</strong> dans votre BPU (ou la bibliothèque en repli), applique les <strong>quantités</strong> du métré, et <strong>déduit les postes annexes</strong> (installation, sécurité, levage, benne) → déboursé sec. Formats : <em>Désignation ; quantité ; unité</em> · <em>250 m² Étanchéité</em> · <em>3 x boîte à eau</em>.</div>
+        <div class="form-field" style="margin-bottom:8px"><label class="form-label">Source des prix (repli auto sur la bibliothèque)</label>
           <select class="form-select" id="metre-source">${assistantSources}</select></div>
         <textarea class="form-textarea" id="metre-text" rows="6" placeholder="Étanchéité bicouche ; 250 ; m²&#10;Relevés ; 60 ; ml&#10;120 m² isolation PIR&#10;3 x boîte à eau"></textarea>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="metre-annexes" checked> Déterminer et ajouter automatiquement les postes annexes (installation, sécurité, levage, benne)</label>
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
           <button class="btn btn-primary btn-sm" data-action="generateDevisFromMetre">${svgIcon(ico.spark,13)} Générer le chiffrage</button>
-        </div>`:'<div class="note" style="text-transform:none;letter-spacing:0">Générez un devis chiffré automatiquement depuis un métré, avec votre BPU ou la bibliothèque — 100% hors-ligne.</div>'}
+        </div>`:'<div class="note" style="text-transform:none;letter-spacing:0">Décrivez votre métré : l\'assistant retrouve les références et prix (BPU ou bibliothèque), applique vos quantités et déduit les postes annexes — 100% hors-ligne.</div>'}
       </div>`;
     return`
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
@@ -4313,6 +4334,19 @@ function renderPortfolio(){
 }
 
 // ─── Petite intervention : fiche 1 page ───────────────────────────────────────
+// États d'avancement d'une petite intervention
+const PETITE_STATUTS=['À planifier','Planifiée','En cours','Terminée','Facturée'];
+function petiteAdvanceStatut(cur){
+  const i=PETITE_STATUTS.indexOf(cur);
+  if(i>=0&&i<PETITE_STATUTS.length-1)return PETITE_STATUTS[i+1];
+  return null;
+}
+function petiteStatutBadge(s){
+  if(s==='Facturée')return'badge-green';
+  if(s==='Terminée')return'badge-blue';
+  if(s==='En cours')return'badge-orange';
+  return'badge-grey';
+}
 function typeToggle(d){
   const petite=d.type==='petite';
   return`<div class="type-bar">
@@ -4376,6 +4410,19 @@ function renderPetite(d){
       </div>
       <button class="btn btn-sm" data-action="exportPetite" style="background:rgba(255,255,255,.92);color:var(--acc);font-weight:600;white-space:nowrap">${svgIcon(ico.pdf,13)} Export PDF récap</button>
     </div>
+
+    <!-- État d'avancement -->
+    ${(()=>{const st=p.statut||PETITE_STATUTS[0];const si=PETITE_STATUTS.indexOf(st);const prog=(si+1)/PETITE_STATUTS.length*100;const next=petiteAdvanceStatut(st);
+      return`<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px"><span class="card-title" style="margin:0">${svgIcon(ico.checkmark,14)} Avancement</span><span class="badge ${petiteStatutBadge(st)}">${esc(st)}</span></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="form-select" name="petite.statut" style="width:auto">${PETITE_STATUTS.map(v=>`<option${st===v?' selected':''}>${v}</option>`).join('')}</select>
+          ${next?`<button class="btn btn-primary btn-sm" data-action="petiteAdvance" title="Passer à : ${esc(next)}">${svgIcon(ico.checkmark,12)} ${esc(next)} →</button>`:`<span class="badge badge-green">✓ ${esc(st)}</span>`}
+        </div>
+      </div>
+      <div class="prog-bar" style="height:9px"><div class="prog-fill" style="width:${prog}%;background:${st==='Facturée'||st==='Terminée'?'var(--pos)':'var(--acc)'}"></div></div>
+    </div>`;})()}
 
     <!-- Récap KPI -->
     <div class="cockpit-grid">
@@ -4492,7 +4539,7 @@ function exportPetitePdf(){
       <div><h1>${esc(d.ident.nom||'Petite intervention')}</h1>
         <div class="muted">${d.ident.otp?'N° OTP : '+esc(d.ident.otp)+' · ':''}${esc(d.ident.adresse||'')}</div>
         ${(d.ident.debut||d.ident.fin)?`<div class="muted">Période : ${d.ident.debut?fmtDateFR(d.ident.debut):'—'} → ${d.ident.fin?fmtDateFR(d.ident.fin):'—'}</div>`:''}
-        <div class="muted">Fiche d'intervention · éditée le ${fmtDateFR(todayISO())}</div></div>
+        <div class="muted">Avancement : ${esc(p.statut||PETITE_STATUTS[0])} · Fiche d'intervention · éditée le ${fmtDateFR(todayISO())}</div></div>
       <div style="text-align:right"><strong>${esc(a.societe||a.name||'Votre entreprise')}</strong><br>
         <span class="muted">${esc(a.name||'')}${a.email?'<br>'+esc(a.email):''}</span></div>
     </div>
