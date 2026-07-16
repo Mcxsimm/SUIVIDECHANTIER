@@ -714,8 +714,8 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   taskView:'liste',theme:'light',docQuery:'',
   account:{name:'',email:'',societe:'',connected:false},accountOpen:false,
   crmData:{contacts:[]},crmQuery:'',
-  devisData:{list:[]},devisId:null,
-  bpuData:{list:[]},bpuId:null,
+  devisData:{list:[]},devisId:null,assistantOpen:false,
+  bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
   bibUser:[],bibFormOpen:false,
   searchQ:'',notifOpen:false,lastSaved:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
@@ -775,7 +775,7 @@ function bpusForDevis(dv){
 }
 // Convertit les lignes d'un BPU en lignes de devis
 function bpuLinesToDevis(b){
-  return(b.lignes||[]).filter(l=>l.designation).map(l=>({designation:l.designation,qte:l.qte||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'}));
+  return(b.lignes||[]).filter(l=>l.designation).map(l=>({designation:l.designation,descriptif:l.descriptif||'',qte:l.qte||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'}));
 }
 
 // Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
@@ -852,8 +852,8 @@ function exportCsvKind(kind){
   const dec=x=>String(x??'').replace('.',',');
   if(kind==='crm'){
     downloadCSV('contacts-crm-'+todayISO()+'.csv',[
-      ['Nom','Société','Type','Statut','Téléphone','E-mail','Dernier contact','Notes'],
-      ...state.crmData.contacts.filter(c=>c.nom).map(c=>[c.nom,c.societe,c.type,c.statut,c.tel,c.email,fmtDateFR(c.dernierContact),c.notes])
+      ['Nom','Société','Type','Statut','Téléphone','E-mail','Adresse','Dernier contact','Notes'],
+      ...state.crmData.contacts.filter(c=>c.nom).map(c=>[c.nom,c.societe,c.type,c.statut,c.tel,c.email,c.adresse||'',fmtDateFR(c.dernierContact),c.notes])
     ]);return;
   }
   if(kind==='devis'){
@@ -1535,6 +1535,11 @@ document.addEventListener('change',e=>{
       const ct=state.crmData.contacts.find(c=>c.id===val);
       if(b&&ct){b.client=ct.nom+(ct.societe?' ('+ct.societe+')':'');saveBpu();}
     }
+    // Devis : saisir un n° de bon de commande valide automatiquement le devis
+    if(/^devis\.list\.\d+\.bc$/.test(name)&&String(val).trim()){
+      const dvv=state.devisData.list[parseInt(name.split('.')[2])];
+      if(dvv){dvv.statut='Accepté';if(!dvv.bcDate)dvv.bcDate=todayISO();saveDevis();}
+    }
     render();return;
   }
   if(!getActive())return;
@@ -1625,12 +1630,13 @@ document.addEventListener('click',e=>{
     if(action==='devisFromContact'){
       const ct=state.crmData.contacts.find(c=>c.id===id);
       const clientStr=ct?ct.nom+(ct.societe?' ('+ct.societe+')':''):'';
-      const bpu=ct?bpusForContact(ct).find(b=>(b.lignes||[]).some(l=>l.designation)):null;
-      if(bpu&&confirm('Ce contact a le BPU « '+(bpu.nom||'BPU')+' ». Créer le devis pré-rempli avec ses lignes ?')){
-        newDevis(clientStr,{contactId:ct.id,lignes:bpuLinesToDevis(bpu)});
-      }else{
-        newDevis(clientStr,ct?{contactId:ct.id}:null);
-      }
+      newDevis(clientStr,ct?{contactId:ct.id}:null);
+      return;
+    }
+    if(action==='crmAdvance'){
+      const ct=state.crmData.contacts.find(c=>c.id===id);
+      const next=ct&&crmAdvanceStatut(ct.statut);
+      if(ct&&next){ct.statut=next;ct.dernierContact=todayISO();saveCrm();render();toast('Relation avancée : '+next+'.');}
       return;
     }
     // ── Devis ──
@@ -1703,6 +1709,36 @@ document.addEventListener('click',e=>{
     }
     if(action==='exportDevis'){exportDevisPdf(id);return;}
     if(action==='devisToChantier'){devisToChantier(id);return;}
+    if(action==='toggleAssistant'){state.assistantOpen=!state.assistantOpen;render();return;}
+    if(action==='generateDevisFromMetre'){
+      const dv=state.devisData.list.find(d=>d.id===state.devisId);
+      const el=document.getElementById('metre-text');
+      const srcEl=document.getElementById('metre-source');
+      if(!dv||!el)return;
+      const src=srcEl?srcEl.value:'bib';
+      let sourceLines=[];
+      if(src&&src!=='bib'){
+        const b=state.bpuData.list.find(x=>x.id===src);
+        sourceLines=(b?b.lignes:[]).filter(l=>l.designation).map(l=>({designation:l.designation,descriptif:l.descriptif||'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20',tps:0}));
+      }else{
+        sourceLines=getBib().map(it=>({designation:it.d+(it.s?' — '+it.s:''),descriptif:'',unite:it.u,pu:it.p>0?String(it.p):'',tva:'20',tps:it.t||0}));
+      }
+      const rows=el.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(!rows.length){toast('Collez au moins une ligne de métré.');return;}
+      let matched=0,unmatched=0;const newLignes=[];
+      rows.forEach(r=>{
+        const pm=parseMetreLine(r);
+        const m=matchSourceLine(pm.designation,sourceLines);
+        if(m){matched++;const sl=m.line;newLignes.push({designation:sl.designation,descriptif:sl.descriptif||'',qte:pm.qte||'',unite:sl.unite||pm.unite||'',pu:sl.pu||'',tva:sl.tva||'20',tps:sl.tps||0});}
+        else{unmatched++;newLignes.push({designation:pm.designation,descriptif:'',qte:pm.qte||'',unite:pm.unite||'',pu:'',tva:'20'});}
+      });
+      const kept=(dv.lignes||[]).filter(l=>l.designation||n(l.qte)||n(l.pu));
+      dv.lignes=kept.concat(newLignes);
+      state.assistantOpen=false;
+      saveDevis();render();
+      toast('Chiffrage généré : '+matched+' ligne(s) chiffrée(s)'+(unmatched?', '+unmatched+' à compléter':'')+'.');
+      return;
+    }
     // Devis : importer un BPU du client dans le devis courant
     if(action==='importBpuToDevis'){
       const dv=state.devisData.list.find(d=>d.id===state.devisId);
@@ -1723,7 +1759,7 @@ document.addEventListener('click',e=>{
       const b=state.bpuData.list.find(x=>x.id===btn.dataset.bpu);
       const l=b&&b.lignes?b.lignes[parseInt(btn.dataset.idx)]:null;
       if(dv&&l){
-        const ligne={designation:l.designation,qte:'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'};
+        const ligne={designation:l.designation,descriptif:l.descriptif||'',qte:'',unite:l.unite||'',pu:l.pu||'',tva:l.tva||'20'};
         const empty=dv.lignes.findIndex(x=>!x.designation&&!n(x.qte)&&!n(x.pu));
         if(empty>=0)dv.lignes[empty]=ligne;else dv.lignes.push(ligne);
         saveDevis();render();
@@ -1758,7 +1794,28 @@ document.addEventListener('click',e=>{
     }
     if(action==='addBpuLigne'){
       const b=state.bpuData.list.find(x=>x.id===state.bpuId);
-      if(b){b.lignes.push({designation:'',unite:'',pu:'',tva:'20'});saveBpu();render();}
+      if(b){b.lignes.push({designation:'',descriptif:'',unite:'',pu:'',tva:'20'});saveBpu();render();}
+      return;
+    }
+    if(action==='toggleBpuQuick'){state.bpuQuickOpen=!state.bpuQuickOpen;render();return;}
+    if(action==='addBpuQuick'){
+      const b=state.bpuData.list.find(x=>x.id===state.bpuId);
+      const el=document.getElementById('bpu-quick');
+      if(!b||!el)return;
+      const lines=el.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      let added=0;
+      lines.forEach(line=>{
+        const parts=line.split(/\t|;|\|/).map(s=>s.trim());
+        const designation=parts[0]||'';
+        if(!designation)return;
+        const unite=parts[1]||'';
+        const pu=(parts[2]||'').replace(',','.').replace(/[^0-9.]/g,'');
+        const tva=((parts[3]||'20').replace(/[^0-9.]/g,''))||'20';
+        b.lignes.push({designation,descriptif:'',unite,pu,tva});
+        added++;
+      });
+      if(added){state.bpuQuickOpen=false;saveBpu();render();toast(added+' ligne(s) ajoutée(s) au BPU.');}
+      else toast('Aucune ligne détectée.');
       return;
     }
     if(action==='delBpuLigne'){
@@ -1770,10 +1827,9 @@ document.addEventListener('click',e=>{
     if(action==='bpuToDevis'){
       const b=state.bpuData.list.find(x=>x.id===id);
       if(!b)return;
-      const lignes=bpuLinesToDevis(b);
-      if(!lignes.length){toast('Ce BPU ne contient aucune ligne à convertir.');return;}
       state.bpuId=null;
-      newDevis(b.client||'',{contactId:b.contactId||'',lignes});
+      newDevis(b.client||'',{contactId:b.contactId||''});
+      toast('Devis créé et lié au client. Ajoutez les lignes voulues depuis le panneau « BPU du client » ou l\'assistant métré.');
       return;
     }
     // ── Recherche globale / notifications / exports ──
@@ -3390,9 +3446,16 @@ function crmStatutClass(s){
   return'st-afaire';
 }
 function addContact(nom){
-  state.crmData.contacts.unshift({id:'ct'+Date.now(),nom:(nom||'').trim(),societe:'',tel:'',email:'',
+  state.crmData.contacts.unshift({id:'ct'+Date.now(),nom:(nom||'').trim(),societe:'',tel:'',email:'',adresse:'',
     type:'Prospect',statut:'À contacter',dernierContact:todayISO(),notes:''});
   saveCrm();render();
+}
+// Pipeline d'avancement de la relation (hors « Sans suite »)
+const CRM_PIPELINE=['À contacter','Relancé','Devis envoyé','Client actif'];
+function crmAdvanceStatut(cur){
+  const i=CRM_PIPELINE.indexOf(cur);
+  if(i>=0&&i<CRM_PIPELINE.length-1)return CRM_PIPELINE[i+1];
+  return null;
 }
 function crmQaSubmit(){const i=document.getElementById('crm-qa');if(i&&i.value.trim())addContact(i.value);}
 
@@ -3406,7 +3469,14 @@ function renderCRM(){
     ['Clients actifs',all.filter(c=>c.statut==='Client actif').length,'var(--pos)'],
     ['À relancer',all.filter(c=>c.statut==='À contacter'||c.statut==='Relancé').length,'var(--warn)'],
   ];
-  const cards=list.map(({ct,i})=>{const nbpu=bpusForContact(ct).length;return`
+  const cards=list.map(({ct,i})=>{
+    const nbpu=bpusForContact(ct).length;
+    const perdu=ct.statut==='Sans suite';
+    const stIdx=CRM_PIPELINE.indexOf(ct.statut);
+    const prog=perdu?0:(stIdx>=0?(stIdx+1)/CRM_PIPELINE.length*100:0);
+    const nextSt=crmAdvanceStatut(ct.statut);
+    const progColor=perdu?'var(--neg)':(ct.statut==='Client actif'?'var(--pos)':'var(--acc)');
+    return`
     <div class="ck-card">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div class="acc-avatar" style="width:38px;height:38px;font-size:13px;background:${ct.type==='Client'||ct.statut==='Client actif'?'var(--pos)':'var(--acc)'}">${esc((ct.nom||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()||'?')}</div>
@@ -3414,14 +3484,24 @@ function renderCRM(){
         <span class="pill ${crmStatutClass(ct.statut)}">${esc(ct.statut)}</span>
         <button class="btn btn-danger btn-icon btn-sm" data-action="delContact" data-id="${ct.id}">${svgIcon(ico.trash,13)}</button>
       </div>
+      <!-- Avancement de la relation -->
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px">
+          <span class="form-label" style="margin:0">Avancement — ${perdu?'Sans suite':(stIdx>=0?`étape ${stIdx+1}/${CRM_PIPELINE.length}`:'—')}</span>
+          ${nextSt?`<button class="btn btn-primary btn-sm" data-action="crmAdvance" data-id="${ct.id}" title="Passer à : ${esc(nextSt)}">${svgIcon(ico.checkmark,12)} ${esc(nextSt)} →</button>`
+            :(ct.statut==='Client actif'?`<span class="badge badge-green">✓ Client actif</span>`:'')}
+        </div>
+        <div class="prog-bar" style="height:8px"><div class="prog-fill" style="width:${prog}%;background:${progColor}"></div></div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div class="form-field"><label class="form-label">Société</label><input class="form-input" type="text" name="crm.contacts.${i}.societe" value="${esc(ct.societe)}"></div>
         <div class="form-field"><label class="form-label">Type</label><select class="form-select" name="crm.contacts.${i}.type">${CRM_TYPES.map(v=>`<option${ct.type===v?' selected':''}>${v}</option>`).join('')}</select></div>
         <div class="form-field"><label class="form-label">Téléphone</label><input class="form-input" type="tel" name="crm.contacts.${i}.tel" value="${esc(ct.tel)}"></div>
         <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="crm.contacts.${i}.email" value="${esc(ct.email)}"></div>
+        <div class="form-field" style="grid-column:1/-1"><label class="form-label">Adresse client</label><input class="form-input" type="text" name="crm.contacts.${i}.adresse" value="${esc(ct.adresse||'')}" placeholder="N°, rue, code postal, ville"></div>
         <div class="form-field"><label class="form-label">Statut relation</label><select class="form-select" name="crm.contacts.${i}.statut">${CRM_STATUTS.map(v=>`<option${ct.statut===v?' selected':''}>${v}</option>`).join('')}</select></div>
         <div class="form-field"><label class="form-label">Dernier contact</label><input class="form-input" type="date" name="crm.contacts.${i}.dernierContact" value="${ct.dernierContact||''}"></div>
-        <div class="form-field" style="grid-column:1/-1"><label class="form-label">Notes</label><input class="form-input" type="text" name="crm.contacts.${i}.notes" value="${esc(ct.notes)}" placeholder="Historique, besoins, relance prévue…"></div>
+        <div class="form-field" style="grid-column:1/-1"><label class="form-label">Notes</label><textarea class="form-textarea" name="crm.contacts.${i}.notes" rows="2" placeholder="Historique, besoins, relance prévue…" style="resize:vertical;min-height:44px">${esc(ct.notes)}</textarea></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         ${ct.tel?`<a class="btn btn-ghost btn-sm" href="tel:${esc(ct.tel)}" style="text-decoration:none">📞 Appeler</a>`:''}
@@ -3469,7 +3549,7 @@ function newDevis(client,prefill){
   const yr=new Date().getFullYear();
   const num='DEV-'+yr+'-'+String(state.devisData.list.length+1).padStart(3,'0');
   const lignes=prefill&&prefill.lignes&&prefill.lignes.length?prefill.lignes:Array.from({length:4},()=>({designation:'',qte:'',unite:'',pu:'',tva:'20'}));
-  const dv={id:'dv'+Date.now(),num,client:client||'',contactId:(prefill&&prefill.contactId)||'',date:todayISO(),validite:'30',statut:'Brouillon',notes:'',lignes};
+  const dv={id:'dv'+Date.now(),num,client:client||'',contactId:(prefill&&prefill.contactId)||'',date:todayISO(),validite:'30',statut:'Brouillon',notes:'',bc:'',bcDate:'',lignes};
   state.devisData.list.unshift(dv);
   state.devisId=dv.id;
   saveDevis();
@@ -3512,8 +3592,9 @@ function exportDevisPdf(id){
       </div>
     </div>
     <div class="field" style="margin-bottom:14px"><div class="label">Client</div><div class="block">${esc(dv.client||'—')}</div></div>
+    ${dv.bc?`<div class="field" style="margin-bottom:14px"><div class="label">Bon de commande</div><div class="block">N° ${esc(dv.bc)}${dv.bcDate?' — '+fmtDateFR(dv.bcDate):''} · Devis validé</div></div>`:''}
     <table><thead><tr><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>TVA</th><th>Total HT</th></tr></thead><tbody>
-    ${lignes.map(l=>`<tr><td>${esc(l.designation)}</td><td>${esc(l.qte)}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td><td>${eurRaw(n(l.qte)*n(l.pu))}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Aucune ligne</td></tr>'}
+    ${lignes.map(l=>`<tr><td>${esc(l.designation)}${l.descriptif?`<br><span class="muted" style="font-size:11px">${esc(l.descriptif)}</span>`:''}</td><td>${esc(l.qte)}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td><td>${eurRaw(n(l.qte)*n(l.pu))}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">Aucune ligne</td></tr>'}
     </tbody></table>
     <div style="display:flex;justify-content:flex-end;margin-top:12px">
       <table style="width:280px">
@@ -3538,6 +3619,34 @@ function devisHeures(dv){
   return h*coeff;
 }
 
+// ─── Assistant devis : métré → chiffrage (automatisation locale, hors-ligne) ──
+// Découpe un texte en mots significatifs (sans accents, >2 lettres)
+function normTokens(s){return String(s||'').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,' ').split(/\s+/).filter(w=>w.length>2);}
+// Cherche la meilleure ligne source correspondant à un libellé de métré
+function matchSourceLine(text,sourceLines){
+  const qt=normTokens(text);
+  if(!qt.length)return null;
+  let best=null,bestScore=0;
+  sourceLines.forEach(sl=>{
+    const st=normTokens(sl.designation+' '+(sl.descriptif||''));
+    if(!st.length)return;
+    let common=0;qt.forEach(w=>{if(st.includes(w))common++;});
+    const score=common/qt.length;
+    if(score>bestScore){bestScore=score;best=sl;}
+  });
+  return best&&bestScore>=0.34?{line:best,score:bestScore}:null;
+}
+// Extrait {designation, qte, unite} d'une ligne de métré libre
+function parseMetreLine(r){
+  const parts=r.split(/\t|;|\|/).map(s=>s.trim());
+  if(parts.length>=2){return{designation:parts[0],qte:(parts[1]||'').replace(',','.').replace(/[^0-9.]/g,''),unite:parts[2]||''};}
+  let m=r.match(/^(\d+[\.,]?\d*)\s*[x×]\s*(.+)$/);
+  if(m)return{designation:m[2].trim(),qte:m[1].replace(',','.'),unite:''};
+  m=r.match(/^(.+?)\s+(\d+[\.,]?\d*)\s*(m²|m2|ml|m3|m|u|kg|t|forfait|ff|h|j|ens)?\.?$/i);
+  if(m)return{designation:m[1].trim(),qte:m[2].replace(',','.'),unite:(m[3]||'').replace('m2','m²')};
+  return{designation:r.trim(),qte:'',unite:''};
+}
+
 function renderDevis(){
   const list=state.devisData.list;
   // ── Éditeur ──
@@ -3559,7 +3668,8 @@ function renderDevis(){
       <td class="auto" style="font-weight:600">${n(l.qte)*n(l.pu)>0?eurRaw(n(l.qte)*n(l.pu)):'—'}</td>
       <td class="auto" title="${n(l.tps)>0?'Cadence base : '+num2(n(l.tps))+' h/'+esc(l.unite||'u')+(coeff!==1?' × coeff '+coeff:''):'Ligne libre — pas de cadence associée'}" style="color:var(--acc);font-weight:600;white-space:nowrap">${hL>0?hL.toFixed(1)+' h':'—'}</td>
       <td><button class="btn btn-danger btn-icon btn-sm" data-action="delDevisLigne" data-idx="${j}">${svgIcon(ico.trash,13)}</button></td>
-    </tr>`;}).join('');
+    </tr>
+    <tr><td colspan="8" style="padding-top:0;border-top:none"><input type="text" name="devis.list.${idx}.lignes.${j}.descriptif" value="${esc(l.descriptif||'')}" placeholder="↳ Descriptif (optionnel)" style="width:100%;font-size:12px;color:var(--sub);border:none;border-bottom:1px dashed var(--border);background:transparent"></td></tr>`;}).join('');
     // Bibliothèque : recherche (références perso + base intégrée)
     const ALLBIB=getBib();
     const nUser=state.bibUser.length;
@@ -3595,6 +3705,23 @@ function renderDevis(){
               </div>`).join('')}
           </div>`).join('')}
       </div>`:'';
+    // Assistant devis : métré → chiffrage (source = BPU du client ou bibliothèque)
+    const assistantSources=dvBpus.map(b=>`<option value="${b.id}">BPU — ${esc(b.nom||'BPU')}</option>`).join('')+`<option value="bib">Bibliothèque cadences & prix</option>`;
+    const assistantCard=`
+      <div class="card" style="margin-bottom:14px;border:1px dashed var(--acc)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <div class="card-title" style="margin:0">${svgIcon(ico.spark,15)} Assistant devis — métré → chiffrage</div>
+          <button class="btn btn-ghost btn-sm" data-action="toggleAssistant">${state.assistantOpen?'Fermer':'Ouvrir'}</button>
+        </div>
+        ${state.assistantOpen?`
+        <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:8px">Collez votre métré (une prestation par ligne). L'assistant associe chaque ligne à votre bordereau/bibliothèque et remplit quantités + prix (déboursé sec). Formats acceptés : <em>Désignation ; quantité ; unité</em> · <em>250 m² Étanchéité</em> · <em>3 x boîte à eau</em>.</div>
+        <div class="form-field" style="margin-bottom:8px"><label class="form-label">Source des prix</label>
+          <select class="form-select" id="metre-source">${assistantSources}</select></div>
+        <textarea class="form-textarea" id="metre-text" rows="6" placeholder="Étanchéité bicouche ; 250 ; m²&#10;Relevés ; 60 ; ml&#10;120 m² isolation PIR&#10;3 x boîte à eau"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-primary btn-sm" data-action="generateDevisFromMetre">${svgIcon(ico.spark,13)} Générer le chiffrage</button>
+        </div>`:'<div class="note" style="text-transform:none;letter-spacing:0">Générez un devis chiffré automatiquement depuis un métré, avec votre BPU ou la bibliothèque — 100% hors-ligne.</div>'}
+      </div>`;
     return`
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" data-action="closeDevis">← Tous les devis</button>
@@ -3619,6 +3746,7 @@ function renderDevis(){
       </div>
 
       ${bpuPanel}
+      ${assistantCard}
       <!-- Bibliothèque cadences & prix -->
       <div class="card" style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
@@ -3668,6 +3796,15 @@ function renderDevis(){
           <strong style="color:var(--acc)">${totH.toFixed(1)} h · ≈ ${(totH/7.5).toFixed(1)} j·homme</strong>
         </div>`:''}
       </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title">${svgIcon(ico.checkmark,14)} Bon de commande</div>
+        <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:8px">Renseigner un n° de bon de commande valide automatiquement le devis (statut « Accepté »).</div>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
+          <div class="form-field" style="grid-column:span 2"><label class="form-label">N° bon de commande</label><input class="form-input" type="text" name="devis.list.${idx}.bc" value="${esc(dv.bc||'')}" placeholder="Réf. BC client"></div>
+          <div class="form-field"><label class="form-label">Date BC</label><input class="form-input" type="date" name="devis.list.${idx}.bcDate" value="${dv.bcDate||''}"></div>
+        </div>
+        ${dv.bc?`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:8px;color:var(--pos);font-weight:600">${svgIcon(ico.checkmark,12)} Devis validé — BC ${esc(dv.bc)}${dv.bcDate?' du '+fmtDateFR(dv.bcDate):''}</div>`:''}
+      </div>
       <div class="card">
         <div class="form-field"><label class="form-label">Conditions & remarques (affichées sur le PDF)</label>
         <textarea class="form-textarea" name="devis.list.${idx}.notes" placeholder="Acompte, délais, exclusions…">${esc(dv.notes)}</textarea></div>
@@ -3683,6 +3820,7 @@ function renderDevis(){
         <div class="doc-name">${esc(dv.num)}${dv.client?' · '+esc(dv.client):''}</div>
         <div class="doc-meta">${fmtDateFR(dv.date)} · ${t.ttc>0?eurRaw(t.ttc)+' TTC':'vide'}</div>
       </div>
+      ${dv.bc?`<span class="badge badge-green" title="Bon de commande ${esc(dv.bc)}">BC</span>`:''}
       <span class="badge ${devisStatutBadge(dv.statut)}">${esc(dv.statut)}</span>
       <button class="btn btn-ghost btn-icon btn-sm" data-action="exportDevis" data-id="${dv.id}" title="PDF">${svgIcon(ico.pdf,13)}</button>
       <button class="btn btn-ghost btn-icon btn-sm" data-action="dupDevis" data-id="${dv.id}" title="Dupliquer">${svgIcon(ico.copy,13)}</button>
@@ -3713,7 +3851,7 @@ function renderDevis(){
 function newBpu(client,contactId){
   const b={id:'bp'+Date.now(),nom:client?('BPU '+client):('BPU '+(state.bpuData.list.length+1)),
     client:client||'',contactId:contactId||'',date:todayISO(),notes:'',
-    lignes:Array.from({length:4},()=>({designation:'',unite:'',pu:'',tva:'20'}))};
+    lignes:Array.from({length:4},()=>({designation:'',descriptif:'',unite:'',pu:'',tva:'20'}))};
   state.bpuData.list.unshift(b);
   state.bpuId=b.id;
   saveBpu();
@@ -3732,7 +3870,7 @@ function exportBpuPdf(id){
     </div>
     <div class="field" style="margin-bottom:14px"><div class="label">Client</div><div class="block">${esc(b.client||'—')}</div></div>
     <table><thead><tr><th>Désignation</th><th>Unité</th><th>PU HT</th><th>TVA</th></tr></thead><tbody>
-    ${lignes.map(l=>`<tr><td>${esc(l.designation)}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td></tr>`).join('')||'<tr><td colspan="4" class="muted">Aucune ligne</td></tr>'}
+    ${lignes.map(l=>`<tr><td>${esc(l.designation)}${l.descriptif?`<br><span class="muted" style="font-size:11px">${esc(l.descriptif)}</span>`:''}</td><td>${esc(l.unite)}</td><td>${eurRaw(n(l.pu))}</td><td>${esc(l.tva||'20')}%</td></tr>`).join('')||'<tr><td colspan="4" class="muted">Aucune ligne</td></tr>'}
     </tbody></table>
     ${b.notes?`<h2>Conditions</h2><div class="block">${esc(b.notes)}</div>`:''}
     <div style="margin-top:24px" class="muted">Prix unitaires hors taxes — établi le ${fmtDateFR(todayISO())}.</div>`;
@@ -3753,7 +3891,8 @@ function renderBpu(){
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="bpu.list.${idx}.lignes.${j}.pu" value="${l.pu||''}" style="width:90px" placeholder="0"></div></td>
       <td><input type="number" name="bpu.list.${idx}.lignes.${j}.tva" value="${l.tva||'20'}" style="width:52px"> %</td>
       <td><button class="btn btn-danger btn-icon btn-sm" data-action="delBpuLigne" data-idx="${j}">${svgIcon(ico.trash,13)}</button></td>
-    </tr>`).join('');
+    </tr>
+    <tr><td colspan="5" style="padding-top:0;border-top:none"><input type="text" name="bpu.list.${idx}.lignes.${j}.descriptif" value="${esc(l.descriptif||'')}" placeholder="↳ Descriptif détaillé (optionnel)" style="width:100%;font-size:12px;color:var(--sub);border:none;border-bottom:1px dashed var(--border);background:transparent"></td></tr>`).join('');
     return`
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" data-action="closeBpu">← Tous les BPU</button>
@@ -3771,7 +3910,18 @@ function renderBpu(){
         </div>
       </div>
       <div class="card" style="margin-bottom:14px">
-        <div class="card-title">Lignes du bordereau</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <div class="card-title" style="margin:0">Lignes du bordereau</div>
+          <button class="btn btn-ghost btn-sm" data-action="toggleBpuQuick">${svgIcon(ico.edit,13)} ${state.bpuQuickOpen?'Fermer':'Saisie rapide'}</button>
+        </div>
+        ${state.bpuQuickOpen?`
+        <div class="ck-card" style="margin-bottom:10px">
+          <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:6px">Collez une ligne par prestation. Séparez par <strong>;</strong> (ou tabulation) : <em>Désignation ; unité ; prix ; TVA</em>. Ex :<br><code style="font-size:12px">Étanchéité PVC ; m² ; 32 ; 20</code></div>
+          <textarea class="form-textarea" id="bpu-quick" rows="5" placeholder="Étanchéité bicouche ; m² ; 32 ; 20&#10;Relevés ; ml ; 28 ; 20&#10;Boîte à eau ; u ; 95"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px">
+            <button class="btn btn-primary btn-sm" data-action="addBpuQuick">${svgIcon(ico.plus,13)} Ajouter au BPU</button>
+          </div>
+        </div>`:''}
         <div class="tbl-wrap"><table>
           <thead><tr><th>Désignation</th><th>Unité</th><th>PU HT</th><th>TVA</th><th></th></tr></thead>
           <tbody>${ligneRows}</tbody>
