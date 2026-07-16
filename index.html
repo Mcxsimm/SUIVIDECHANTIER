@@ -620,8 +620,8 @@ function defaults(){
     type:'grosse',
     petite:{
       client:'',montant:'',notes:'',
-      fournitures:row6(()=>({designation:'',qte:'',pu:''})),
-      materiel:row6(()=>({designation:'',qte:'',pu:''})),
+      fournitures:row6(()=>({designation:'',qte:'',unite:'',pu:''})),
+      materiel:row6(()=>({designation:'',qte:'',unite:'',pu:''})),
       mainoeuvre:row6(()=>({intervenant:'',date:'',heures:'',taux:'37.3'}))
     },
     ident:{nom:'',otp:'',adresse:'',mo:'',moe:'',bc:'',bet:'',sps:'',inspection:'',
@@ -4174,10 +4174,11 @@ function renderPetite(d){
   const qtyTable=(list,path,unitLabel)=>`
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>Total</th><th></th></tr></thead>
+        <thead><tr><th>Désignation</th><th>Qté</th><th>Unité</th><th>PU HT</th><th>Total</th><th></th></tr></thead>
         <tbody>${list.map((f,i)=>`<tr>
           <td><input type="text" name="petite.${path}.${i}.designation" value="${esc(f.designation)}" style="min-width:120px;width:100%" placeholder="${unitLabel}"></td>
           <td><input type="number" name="petite.${path}.${i}.qte" value="${f.qte||''}" style="width:58px" placeholder="0"></td>
+          <td><input type="text" name="petite.${path}.${i}.unite" value="${esc(f.unite)}" style="width:56px" placeholder="u"></td>
           <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="petite.${path}.${i}.pu" value="${f.pu||''}" style="width:72px" placeholder="0"></div></td>
           <td class="auto" style="font-weight:600">${lineTot(f)>0?eurRaw(lineTot(f)):'—'}</td>
           <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="petite.${path}" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
@@ -4226,6 +4227,8 @@ function renderPetite(d){
         <div class="form-field"><label class="form-label">N° OTP</label><input type="text" name="ident.otp" value="${esc(d.ident.otp)}" class="form-input" placeholder="N° OTP / référence"></div>
         <div class="form-field"><label class="form-label">Client</label><input type="text" name="petite.client" value="${esc(p.client)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Adresse</label><input type="text" name="ident.adresse" value="${esc(d.ident.adresse)}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Date de début</label><input type="date" name="ident.debut" value="${d.ident.debut||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Date de fin</label><input type="date" name="ident.fin" value="${d.ident.fin||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Montant vendu HT</label><div class="amt-cell"><span class="sym">€</span><input type="number" name="petite.montant" value="${p.montant||''}" class="form-input" placeholder="0"></div></div>
       </div>
     </div>
@@ -4314,13 +4317,14 @@ function exportPetitePdf(){
   const recette=n(p.montant);
   const marge=recette-debourse;
   const taux=recette>0?marge/recette*100:0;
-  const qtyRows=list=>((list||[]).filter(x=>x.designation||n(x.qte)||n(x.pu)).map(x=>`<tr><td>${esc(x.designation)}</td><td style="text-align:right">${num2(x.qte)}</td><td style="text-align:right">${eurRaw(n(x.pu))}</td><td style="text-align:right">${eurRaw(lineTot(x))}</td></tr>`).join('')||`<tr><td colspan="4" class="muted">Aucune ligne</td></tr>`);
+  const qtyRows=list=>((list||[]).filter(x=>x.designation||n(x.qte)||n(x.pu)).map(x=>`<tr><td>${esc(x.designation)}</td><td style="text-align:right">${num2(x.qte)}</td><td>${esc(x.unite||'')}</td><td style="text-align:right">${eurRaw(n(x.pu))}</td><td style="text-align:right">${eurRaw(lineTot(x))}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">Aucune ligne</td></tr>`);
   const moRows=(p.mainoeuvre||[]).filter(m=>m.intervenant||n(m.heures)).map(m=>`<tr><td>${esc(m.intervenant)}</td><td>${m.date?fmtDateFR(m.date):'—'}</td><td style="text-align:right">${num2(m.heures)} h</td><td style="text-align:right">${eurRaw(n(m.taux))}</td><td style="text-align:right">${eurRaw(n(m.heures)*n(m.taux))}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">Aucune ligne</td></tr>`;
   const docs=(d.documents||[]);
   const body=`
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
       <div><h1>${esc(d.ident.nom||'Petite intervention')}</h1>
         <div class="muted">${d.ident.otp?'N° OTP : '+esc(d.ident.otp)+' · ':''}${esc(d.ident.adresse||'')}</div>
+        ${(d.ident.debut||d.ident.fin)?`<div class="muted">Période : ${d.ident.debut?fmtDateFR(d.ident.debut):'—'} → ${d.ident.fin?fmtDateFR(d.ident.fin):'—'}</div>`:''}
         <div class="muted">Fiche d'intervention · éditée le ${fmtDateFR(todayISO())}</div></div>
       <div style="text-align:right"><strong>${esc(a.societe||a.name||'Votre entreprise')}</strong><br>
         <span class="muted">${esc(a.name||'')}${a.email?'<br>'+esc(a.email):''}</span></div>
@@ -4333,9 +4337,9 @@ function exportPetitePdf(){
     </div>
     <h3>Client</h3><div class="block">${esc(p.client||'—')}</div>
     <h2>Fournitures — ${eurRaw(totF)}</h2>
-    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.fournitures)}</tbody></table>
+    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th>Unité</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.fournitures)}</tbody></table>
     <h2>Matériel — ${eurRaw(totM)}</h2>
-    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.materiel)}</tbody></table>
+    <table><thead><tr><th>Désignation</th><th style="text-align:right">Qté</th><th>Unité</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th></tr></thead><tbody>${qtyRows(p.materiel)}</tbody></table>
     <h2>Main d'œuvre — ${num2(totH)} h · ${eurRaw(totMO)}</h2>
     <table><thead><tr><th>Intervenant</th><th>Date</th><th style="text-align:right">Heures</th><th style="text-align:right">Taux</th><th style="text-align:right">Coût</th></tr></thead><tbody>${moRows}</tbody></table>
     <h2>Récapitulatif financier</h2>
