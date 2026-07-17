@@ -751,7 +751,7 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
   kpiData:{aoRecus:'',aoDeposes:'',satisfaction:'',periode:''},kpiOpen:true,
   kbData:{docs:[]},rexData:{list:[]},
-  aiConfig:{key:'',model:'claude-opus-4-8',enabled:false},aiBusy:false,
+  aiConfig:{enabled:false,provider:'anthropic',key:'',model:'claude-opus-4-8',geminiKey:'',geminiModel:'gemini-2.0-flash'},aiBusy:false,
   redacType:'cr',redacContext:'',redacResult:'',redacBusy:false,
   assistTab:'today',assistQuery:'',assistAnswer:null,kbQuery:'',kbCat:'all',todayOpen:true,
   bibUser:[],bibFormOpen:false,
@@ -804,12 +804,22 @@ function saveKb(){try{localStorage.setItem(KB_KEY,JSON.stringify(state.kbData));
 function saveRex(){try{localStorage.setItem(REX_KEY,JSON.stringify(state.rexData));markSaved();}catch(e){}}
 // Config IA : clé stockée localement uniquement, JAMAIS incluse dans l'export de sauvegarde
 function saveAi(){try{localStorage.setItem(AI_KEY,JSON.stringify(state.aiConfig));}catch(e){}}
-function aiReady(){return !!(state.aiConfig&&state.aiConfig.enabled&&state.aiConfig.key&&state.aiConfig.key.trim());}
-// Appel API Claude (optionnel, activé seulement si l'utilisateur a saisi une clé)
-async function callClaude(messages,opts){
+// Fournisseur d'IA sélectionné : 'anthropic' (Claude) ou 'gemini' (Google)
+function aiProvider(){return (state.aiConfig||{}).provider||'anthropic';}
+function aiActiveKey(){const c=state.aiConfig||{};return aiProvider()==='gemini'?(c.geminiKey||''):(c.key||'');}
+function aiActiveModel(){const c=state.aiConfig||{};return aiProvider()==='gemini'?(c.geminiModel||'gemini-2.0-flash'):(c.model||'claude-opus-4-8');}
+function aiProviderLabel(){return aiProvider()==='gemini'?'Gemini':'Claude';}
+function aiReady(){const k=aiActiveKey();return !!(state.aiConfig&&state.aiConfig.enabled&&k&&k.trim());}
+// Appel générique : route vers le bon fournisseur selon la config
+async function callAI(messages,opts){
+  return aiProvider()==='gemini'?callGemini(messages,opts):callAnthropic(messages,opts);
+}
+// Appel API Claude (Anthropic)
+async function callAnthropic(messages,opts){
   opts=opts||{};
   const cfg=state.aiConfig||{};
-  if(!cfg.key||!cfg.key.trim())throw new Error('Aucune clé API configurée');
+  const key=(cfg.key||'').trim();
+  if(!key)throw new Error('Aucune clé API Claude configurée');
   const body={
     model:cfg.model||'claude-opus-4-8',
     max_tokens:Math.min(opts.maxTokens||2048,4096),
@@ -820,7 +830,7 @@ async function callClaude(messages,opts){
     method:'POST',
     headers:{
       'content-type':'application/json',
-      'x-api-key':cfg.key.trim(),
+      'x-api-key':key,
       'anthropic-version':'2023-06-01',
       'anthropic-dangerous-direct-browser-access':'true'
     },
@@ -829,11 +839,39 @@ async function callClaude(messages,opts){
   if(!res.ok){
     let msg='Erreur API '+res.status;
     try{const j=await res.json();if(j&&j.error&&j.error.message)msg+=' — '+j.error.message;}catch(e){}
-    if(res.status===401)msg='Clé API invalide ou expirée (401). Vérifiez la clé dans Réglages IA.';
+    if(res.status===401)msg='Clé API Claude invalide ou expirée (401). Vérifiez la clé dans Réglages IA.';
     throw new Error(msg);
   }
   const j=await res.json();
   return (j.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+}
+// Appel API Google Gemini
+async function callGemini(messages,opts){
+  opts=opts||{};
+  const cfg=state.aiConfig||{};
+  const key=(cfg.geminiKey||'').trim();
+  if(!key)throw new Error('Aucune clé API Gemini configurée');
+  const model=cfg.geminiModel||'gemini-2.0-flash';
+  const body={
+    contents:messages.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:String(m.content||'')}]})),
+    generationConfig:{maxOutputTokens:Math.min(opts.maxTokens||2048,8192)}
+  };
+  if(opts.system)body.system_instruction={parts:[{text:opts.system}]};
+  const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
+    method:'POST',
+    headers:{'content-type':'application/json','x-goog-api-key':key},
+    body:JSON.stringify(body)
+  });
+  if(!res.ok){
+    let msg='Erreur API Gemini '+res.status;
+    try{const j=await res.json();if(j&&j.error&&j.error.message)msg+=' — '+j.error.message;}catch(e){}
+    if(res.status===400||res.status===403)msg='Clé API Gemini invalide, expirée ou modèle indisponible. Vérifiez la clé et le modèle dans Réglages IA.';
+    throw new Error(msg);
+  }
+  const j=await res.json();
+  const cand=(j.candidates&&j.candidates[0])||{};
+  if(cand.finishReason==='SAFETY')throw new Error('Réponse bloquée par les filtres de sécurité Gemini.');
+  return ((cand.content&&cand.content.parts)||[]).filter(p=>p.text).map(p=>p.text).join('\n').trim();
 }
 // Bibliothèque complète : références perso (en tête) + base intégrée
 function getBib(){return state.bibUser.concat(BIB_CADENCES);}
@@ -4463,10 +4501,23 @@ function accountPanel(){
       <div class="acc-sec">
         <div class="acc-sec-t">IA générative (optionnel)</div>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" name="ai.enabled" ${state.aiConfig.enabled?'checked':''}> Activer l'assistant Claude (clé API)
+          <input type="checkbox" name="ai.enabled" ${state.aiConfig.enabled?'checked':''}> Activer l'assistant IA (clé API)
         </label>
-        <input type="password" class="inp" name="ai.key" value="${esc(state.aiConfig.key||'')}" placeholder="Clé API Anthropic (sk-ant-…)" autocomplete="off" style="width:100%;margin-bottom:6px">
-        <div class="acc-note">${aiReady()?'✅ IA activée. ':''}La clé est stockée <b>uniquement sur cet appareil</b> et n'est <b>jamais</b> incluse dans la sauvegarde .json. Sans clé, l'assistant fonctionne à 100% hors-ligne. Obtenez une clé sur console.anthropic.com. Ne partagez jamais votre clé.</div>
+        <label class="form-label" style="margin-bottom:3px">Fournisseur</label>
+        <select class="form-select" name="ai.provider" style="width:100%;margin-bottom:8px">
+          <option value="anthropic"${aiProvider()==='anthropic'?' selected':''}>Claude (Anthropic)</option>
+          <option value="gemini"${aiProvider()==='gemini'?' selected':''}>Gemini (Google)</option>
+        </select>
+        ${aiProvider()==='gemini'?`
+          <input type="password" class="inp" name="ai.geminiKey" value="${esc(state.aiConfig.geminiKey||'')}" placeholder="Clé API Google Gemini (AIza…)" autocomplete="off" style="width:100%;margin-bottom:6px">
+          <input type="text" class="inp" name="ai.geminiModel" value="${esc(state.aiConfig.geminiModel||'gemini-2.0-flash')}" placeholder="Modèle (ex : gemini-2.0-flash)" autocomplete="off" style="width:100%;margin-bottom:6px">
+          <div class="acc-note">Clé gratuite sur <b>aistudio.google.com/apikey</b>. Modèles courants : gemini-2.0-flash (rapide), gemini-1.5-pro (qualité).</div>
+        `:`
+          <input type="password" class="inp" name="ai.key" value="${esc(state.aiConfig.key||'')}" placeholder="Clé API Anthropic (sk-ant-…)" autocomplete="off" style="width:100%;margin-bottom:6px">
+          <input type="text" class="inp" name="ai.model" value="${esc(state.aiConfig.model||'claude-opus-4-8')}" placeholder="Modèle (ex : claude-opus-4-8)" autocomplete="off" style="width:100%;margin-bottom:6px">
+          <div class="acc-note">Clé sur <b>console.anthropic.com</b>.</div>
+        `}
+        <div class="acc-note">${aiReady()?'✅ IA activée ('+aiProviderLabel()+'). ':''}La clé est stockée <b>uniquement sur cet appareil</b> et n'est <b>jamais</b> incluse dans la sauvegarde .json. Sans clé, l'assistant fonctionne à 100% hors-ligne. Ne partagez jamais votre clé.</div>
       </div>
       <div class="acc-sec" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="acc-note" style="margin:0">Suivi de Chantier Pro · v${APP_VERSION}</span>
@@ -5163,11 +5214,11 @@ async function assistAskAI(q){
   state.aiBusy=true;render();
   try{
     const ctx=aiGatherContext(q);
-    const txt=await callClaude(
+    const txt=await callAI(
       [{role:'user',content:`Données de mon activité :\n\n${ctx}\n\n---\nQuestion : ${q}`}],
       {system:AI_SYSTEM_ASSIST,maxTokens:1500}
     );
-    state.assistAnswer={title:'Réponse Claude',html:`<div class="ai-md">${mdLite(txt)}</div><div class="note" style="margin-top:8px">Réponse générée par Claude à partir de vos données. Vérifiez toujours les points critiques.</div>`};
+    state.assistAnswer={title:'Réponse '+aiProviderLabel(),html:`<div class="ai-md">${mdLite(txt)}</div><div class="note" style="margin-top:8px">Réponse générée par ${aiProviderLabel()} à partir de vos données. Vérifiez toujours les points critiques.</div>`};
   }catch(err){
     state.assistAnswer={title:'IA indisponible',html:`<div class="note">${esc(err.message||'Erreur')}</div><div class="note" style="margin-top:6px">L'assistant local reste disponible (bouton « Demander »).</div>`};
   }
@@ -5180,7 +5231,7 @@ async function kbSummarize(id){
   if(!aiReady()){toast('Activez l\'IA dans Réglages (clé API) pour résumer.','err',3500);return;}
   dc._sum=true;render();
   try{
-    const txt=await callClaude(
+    const txt=await callAI(
       [{role:'user',content:`Résume ce document technique BTP en 3 à 5 puces claires (points clés, exigences, valeurs chiffrées importantes). Document « ${dc.name} » :\n\n${dc.texte.slice(0,12000)}`}],
       {system:'Tu es un expert technique BTP. Résume en français, factuellement, sans inventer.',maxTokens:700}
     );
@@ -5244,7 +5295,7 @@ async function redacEnhanceAI(){
   const label=(REDAC_TYPES.find(t=>t.id===state.redacType)||{}).label||'document';
   state.redacBusy=true;render();
   try{
-    const txt=await callClaude(
+    const txt=await callAI(
       [{role:'user',content:`Améliore et complète ce brouillon de « ${label} » pour un chantier BTP. Garde exactement les faits et chiffres présents, améliore le style professionnel, complète les rubriques vides avec des formulations pertinentes du métier (étanchéité/couverture/bardage) SANS inventer de faits précis (laisse des [crochets] si une donnée manque). Rends uniquement le texte final :\n\n${base}`}],
       {system:'Tu es un chargé d\'affaires BTP expérimenté qui rédige des documents clairs et professionnels en français.',maxTokens:2000}
     );
@@ -5287,10 +5338,10 @@ function renderAssistant(){
         </div>
         <div class="assist-sugg">${sugg.map(s=>`<button class="assist-chip" data-action="assistSuggest" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-          ${aiReady()?`<button class="btn btn-ghost btn-sm" data-action="assistAskAI" ${state.aiBusy?'disabled':''}>${state.aiBusy?'Claude réfléchit…':svgIcon(ico.spark,13)+' Demander à Claude'}</button>`:''}
+          ${aiReady()?`<button class="btn btn-ghost btn-sm" data-action="assistAskAI" ${state.aiBusy?'disabled':''}>${state.aiBusy?aiProviderLabel()+' réfléchit…':svgIcon(ico.spark,13)+' Demander à '+aiProviderLabel()}</button>`:''}
           <button class="btn btn-primary btn-sm" data-action="assistAsk">${svgIcon(ico.spark,13)} Demander</button>
         </div>
-        ${aiReady()?'':`<div class="note" style="margin-top:6px">💡 Activez l'IA générative (clé API) dans Réglages pour des réponses rédigées par Claude à partir de vos données.</div>`}
+        ${aiReady()?'':`<div class="note" style="margin-top:6px">💡 Activez l'IA générative (clé API Claude ou Gemini) dans Réglages pour des réponses rédigées par l'IA à partir de vos données.</div>`}
       </div>
       ${state.assistAnswer?`<div class="card"><div class="card-title">${esc(state.assistAnswer.title)}</div>${state.assistAnswer.html}</div>`:`<div class="note">L'assistant répond à partir de vos chantiers, devis, photos, documents, clients, fournisseurs, cadences et retours d'expérience — 100% en local.</div>`}
     `;
