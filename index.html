@@ -741,6 +741,7 @@ const BPU_KEY='suivi_chantier_bpu_v1';
 const KPI_KEY='suivi_chantier_kpi_v1';
 const KB_KEY='suivi_chantier_kb_v1';
 const REX_KEY='suivi_chantier_rex_v1';
+const AI_KEY='suivi_chantier_ai_v1';
 const BACKUP_KEY='suivi_chantier_last_backup';
 let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
@@ -750,6 +751,8 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
   kpiData:{aoRecus:'',aoDeposes:'',satisfaction:'',periode:''},kpiOpen:true,
   kbData:{docs:[]},rexData:{list:[]},
+  aiConfig:{key:'',model:'claude-opus-4-8',enabled:false},aiBusy:false,
+  redacType:'cr',redacContext:'',redacResult:'',redacBusy:false,
   assistTab:'today',assistQuery:'',assistAnswer:null,kbQuery:'',kbCat:'all',todayOpen:true,
   bibUser:[],bibFormOpen:false,
   searchQ:'',notifOpen:false,lastSaved:null};
@@ -789,6 +792,7 @@ function load(){
   try{const k=JSON.parse(localStorage.getItem(KPI_KEY)||'null');if(k&&typeof k==='object')state.kpiData=Object.assign(state.kpiData,k);}catch(e){}
   try{const kb=JSON.parse(localStorage.getItem(KB_KEY)||'null');if(kb&&Array.isArray(kb.docs))state.kbData=kb;}catch(e){}
   try{const rx=JSON.parse(localStorage.getItem(REX_KEY)||'null');if(rx&&Array.isArray(rx.list))state.rexData=rx;}catch(e){}
+  try{const ai=JSON.parse(localStorage.getItem(AI_KEY)||'null');if(ai&&typeof ai==='object')state.aiConfig=Object.assign(state.aiConfig,ai);}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
 function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
@@ -798,6 +802,39 @@ function saveBpu(){try{localStorage.setItem(BPU_KEY,JSON.stringify(state.bpuData
 function saveKpi(){try{localStorage.setItem(KPI_KEY,JSON.stringify(state.kpiData));markSaved();}catch(e){}}
 function saveKb(){try{localStorage.setItem(KB_KEY,JSON.stringify(state.kbData));markSaved();}catch(e){}}
 function saveRex(){try{localStorage.setItem(REX_KEY,JSON.stringify(state.rexData));markSaved();}catch(e){}}
+// Config IA : clé stockée localement uniquement, JAMAIS incluse dans l'export de sauvegarde
+function saveAi(){try{localStorage.setItem(AI_KEY,JSON.stringify(state.aiConfig));}catch(e){}}
+function aiReady(){return !!(state.aiConfig&&state.aiConfig.enabled&&state.aiConfig.key&&state.aiConfig.key.trim());}
+// Appel API Claude (optionnel, activé seulement si l'utilisateur a saisi une clé)
+async function callClaude(messages,opts){
+  opts=opts||{};
+  const cfg=state.aiConfig||{};
+  if(!cfg.key||!cfg.key.trim())throw new Error('Aucune clé API configurée');
+  const body={
+    model:cfg.model||'claude-opus-4-8',
+    max_tokens:Math.min(opts.maxTokens||2048,4096),
+    messages:messages
+  };
+  if(opts.system)body.system=opts.system;
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':cfg.key.trim(),
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify(body)
+  });
+  if(!res.ok){
+    let msg='Erreur API '+res.status;
+    try{const j=await res.json();if(j&&j.error&&j.error.message)msg+=' — '+j.error.message;}catch(e){}
+    if(res.status===401)msg='Clé API invalide ou expirée (401). Vérifiez la clé dans Réglages IA.';
+    throw new Error(msg);
+  }
+  const j=await res.json();
+  return (j.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+}
 // Bibliothèque complète : références perso (en tête) + base intégrée
 function getBib(){return state.bibUser.concat(BIB_CADENCES);}
 // ─── BPU (Bordereau de Prix Unitaires) liés aux prospects/clients ───────────
@@ -1575,6 +1612,15 @@ document.addEventListener('change',e=>{
   const name=t.name;
   if(!name)return;
   const val=t.type==='checkbox'?t.checked:t.value;
+  // Config IA (clé API) — stockée localement, hors sauvegarde
+  if(name.startsWith('ai.')){
+    const k=name.slice(3);
+    state.aiConfig[k]=val;
+    saveAi();render();return;
+  }
+  // Rédaction assistée
+  if(name==='redac.type'){state.redacType=val;render();return;}
+  if(name==='redac.result'){state.redacResult=val;return;}
   // Champs des stores globaux (CRM / Devis) — indépendants du chantier actif
   if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')||name.startsWith('kpi.')||name.startsWith('kb.')||name.startsWith('rex.')){
     setGlobalD(name,val);
@@ -1932,6 +1978,11 @@ document.addEventListener('click',e=>{
     if(action==='navTo'){const g=btn.dataset;if(g.ch)state.activeId=g.ch;if(g.devis)state.devisId=g.devis;if(g.bpu)state.bpuId=g.bpu;state.screen=g.scr||'home';render();return;}
     if(action==='assistSuggest'){state.assistQuery=btn.dataset.q;state.assistAnswer=answerAssistant(state.assistQuery);state.assistTab='ask';render();return;}
     if(action==='assistAsk'){const el=document.getElementById('assist-input');const q=el?el.value:'';state.assistQuery=q;state.assistAnswer=answerAssistant(q);render();return;}
+    if(action==='assistAskAI'){const el=document.getElementById('assist-input');const q=el?el.value:(state.assistQuery||'');state.assistQuery=q;assistAskAI(q);return;}
+    if(action==='kbSummarize'){e.preventDefault();kbSummarize(id);return;}
+    if(action==='redacGen'){redacGenerate();return;}
+    if(action==='redacAI'){redacEnhanceAI();return;}
+    if(action==='redacCopy'){const el=document.getElementById('redac-text');if(el){el.select();try{document.execCommand('copy');}catch(_){}navigator.clipboard&&navigator.clipboard.writeText(el.value).catch(()=>{});toast('Texte copié dans le presse-papiers.');}return;}
     if(action==='kbCat'){state.kbCat=btn.dataset.cat;render();return;}
     if(action==='delKbDoc'){if(confirm('Supprimer ce document de la bibliothèque technique ?')){state.kbData.docs=state.kbData.docs.filter(x=>x.id!==id);saveKb();render();}return;}
     if(action==='addRex'){
@@ -1976,8 +2027,8 @@ document.addEventListener('change',async e=>{
     for(const f of files){
       let src='',txt='';
       if(f.size<3000000){try{src=await fileToDataURLRaw(f);}catch(_){}}
-      // extraction de texte pour les formats texte (indexation)
-      if(/\.(txt|csv|md|json)$/i.test(f.name)&&f.size<1000000){try{txt=(await f.text()).slice(0,20000);}catch(_){}}
+      // extraction de texte hors-ligne pour indexation (PDF / Word / Excel / texte)
+      if(f.size<8000000){try{txt=await extractFileText(f);}catch(_){}}
       state.kbData.docs.unshift({id:'kb'+Date.now()+Math.random().toString(36).slice(2,6),name:f.name,
         categorie:guessKbCat(f.name),date:todayISO(),tags:'',note:'',texte:txt,src,size:f.size});
     }
@@ -3391,6 +3442,137 @@ function renderPhotos(d,c){
 // ═══════════ Documents ═══════════
 function guessDocCat(name){const n=(name||'').toLowerCase();if(/plan|dwg|\.dxf/.test(n))return'Plan';if(/devis|dpgf|dqe/.test(n))return'Devis';if(/cr[-_ ]|compte|reunion/.test(n))return'CR';if(/notice|ft|fiche/.test(n))return'Notice';if(/pv|reception|proces/.test(n))return'PV';if(/\.(jpg|jpeg|png|gif|heic)$/.test(n))return'Photo';return'Autre';}
 function fileToDataURLRaw(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});}
+// ─── Extraction de texte hors-ligne (PDF / Word / Excel), 100% local ─────────
+async function inflate(bytes,format){
+  try{
+    const ds=new DecompressionStream(format);
+    const stream=new Blob([bytes]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }catch(e){return null;}
+}
+// Lecteur ZIP minimal (DOCX/XLSX sont des ZIP) via l'annuaire central
+async function unzipEntries(buf){
+  const dv=new DataView(buf),bytes=new Uint8Array(buf),out={};
+  // recherche de l'End Of Central Directory
+  let eocd=-1;
+  for(let i=bytes.length-22;i>=0&&i>bytes.length-22-65536;i--){
+    if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;}
+  }
+  if(eocd<0)return out;
+  const total=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  for(let k=0;k<total;k++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true);
+    const compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const commLen=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(bytes.subarray(p+46,p+46+nameLen));
+    // en-tête local pour connaître la taille réelle des champs name/extra
+    const lNameLen=dv.getUint16(lho+26,true);
+    const lExtraLen=dv.getUint16(lho+28,true);
+    const dataStart=lho+30+lNameLen+lExtraLen;
+    const comp=bytes.subarray(dataStart,dataStart+compSize);
+    out[name]={method,comp};
+    p+=46+nameLen+extraLen+commLen;
+  }
+  return out;
+}
+async function zipEntryText(entry){
+  if(!entry)return'';
+  if(entry.method===0)return new TextDecoder().decode(entry.comp);
+  if(entry.method===8){const inf=await inflate(entry.comp,'deflate-raw');return inf?new TextDecoder().decode(inf):'';}
+  return'';
+}
+function stripXml(xml){
+  // conserve les sauts de paragraphe Word
+  return xml.replace(/<w:p[ >]/g,'\n<w:p ').replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#(\d+);/g,(m,d)=>String.fromCharCode(+d)).replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+}
+async function extractDocxText(buf){
+  const z=await unzipEntries(buf);
+  const xml=await zipEntryText(z['word/document.xml']);
+  return stripXml(xml).slice(0,30000);
+}
+async function extractXlsxText(buf){
+  const z=await unzipEntries(buf);
+  // table des chaînes partagées
+  let shared=[];
+  if(z['xl/sharedStrings.xml']){
+    const sx=await zipEntryText(z['xl/sharedStrings.xml']);
+    shared=(sx.match(/<t[^>]*>([\s\S]*?)<\/t>/g)||[]).map(s=>s.replace(/<[^>]+>/g,''));
+  }
+  let out=[];
+  for(const name in z){
+    if(/^xl\/worksheets\/sheet\d+\.xml$/i.test(name)){
+      const sx=await zipEntryText(z[name]);
+      const cells=sx.match(/<c[^>]*>[\s\S]*?<\/c>/g)||[];
+      for(const c of cells){
+        if(/t="inlineStr"/.test(c)){
+          const im=c.match(/<t[^>]*>([\s\S]*?)<\/t>/);
+          if(im)out.push(im[1].replace(/<[^>]+>/g,''));
+          continue;
+        }
+        const vm=c.match(/<v>([\s\S]*?)<\/v>/);
+        if(!vm)continue;
+        if(/t="s"/.test(c)){const idx=+vm[1];if(shared[idx]!=null)out.push(shared[idx]);}
+        else out.push(vm[1]);
+      }
+    }
+  }
+  return out.join(' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim().slice(0,30000);
+}
+function decodePdfString(s){
+  // décode les échappements PDF dans une chaîne littérale (...)
+  return s.replace(/\\(\d{1,3})/g,(m,o)=>String.fromCharCode(parseInt(o,8)))
+          .replace(/\\n/g,' ').replace(/\\r/g,' ').replace(/\\t/g,' ')
+          .replace(/\\\(/g,'(').replace(/\\\)/g,')').replace(/\\\\/g,'\\');
+}
+async function extractPdfText(buf){
+  const bytes=new Uint8Array(buf);
+  // recherche des flux compressés stream...endstream
+  let text=[];
+  const raw=Array.from(bytes,b=>String.fromCharCode(b)).join('');
+  let idx=0,guard=0;
+  while(guard++<5000){
+    const s=raw.indexOf('stream',idx);
+    if(s<0)break;
+    let ds=s+6;
+    if(raw[ds]==='\r')ds++;
+    if(raw[ds]==='\n')ds++;
+    const e=raw.indexOf('endstream',ds);
+    if(e<0)break;
+    idx=e+9;
+    const chunk=bytes.subarray(ds,e);
+    let content=null;
+    const inf=await inflate(chunk,'deflate');
+    if(inf)content=new TextDecoder('latin1').decode(inf);
+    else{
+      // flux non compressé (ou déjà lisible)
+      const asStr=raw.slice(ds,e);
+      if(/\)\s*T[jJ]/.test(asStr)||/BT[\s\S]*ET/.test(asStr))content=asStr;
+    }
+    if(content){
+      // opérateurs de texte : (....)Tj  et  [(..)(..)]TJ
+      const parts=content.match(/\(((?:[^()\\]|\\.|\([^()]*\))*)\)/g)||[];
+      for(const p of parts){text.push(decodePdfString(p.slice(1,-1)));}
+    }
+  }
+  let t=text.join('').replace(/ /g,'').replace(/[ \t]+/g,' ').replace(/\s{3,}/g,'  ').trim();
+  return t.slice(0,30000);
+}
+async function extractFileText(file){
+  const name=(file.name||'').toLowerCase();
+  try{
+    if(/\.(txt|csv|md|json|xml)$/i.test(name)){return (await file.text()).slice(0,30000);}
+    const buf=await file.arrayBuffer();
+    if(/\.docx$/i.test(name))return await extractDocxText(buf);
+    if(/\.xlsx$/i.test(name))return await extractXlsxText(buf);
+    if(/\.pdf$/i.test(name))return await extractPdfText(buf);
+  }catch(e){console.warn('extract error',name,e);}
+  return'';
+}
 function renderDocuments(d,c){
   const q=(state.docQuery||'').toLowerCase();
   const all=(d.documents||[]);
@@ -4278,6 +4460,14 @@ function accountPanel(){
           <input type="file" accept="application/json,.json" data-import-backup style="display:none"></label>
         <div class="acc-note">Exportez pour sauvegarder ou transférer vos chantiers vers un autre appareil, puis importez le fichier.</div>
       </div>
+      <div class="acc-sec">
+        <div class="acc-sec-t">IA générative (optionnel)</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" name="ai.enabled" ${state.aiConfig.enabled?'checked':''}> Activer l'assistant Claude (clé API)
+        </label>
+        <input type="password" class="inp" name="ai.key" value="${esc(state.aiConfig.key||'')}" placeholder="Clé API Anthropic (sk-ant-…)" autocomplete="off" style="width:100%;margin-bottom:6px">
+        <div class="acc-note">${aiReady()?'✅ IA activée. ':''}La clé est stockée <b>uniquement sur cet appareil</b> et n'est <b>jamais</b> incluse dans la sauvegarde .json. Sans clé, l'assistant fonctionne à 100% hors-ligne. Obtenez une clé sur console.anthropic.com. Ne partagez jamais votre clé.</div>
+      </div>
       <div class="acc-sec" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <span class="acc-note" style="margin:0">Suivi de Chantier Pro · v${APP_VERSION}</span>
         <span class="acc-note" style="margin:0">${storageInfo()}</span>
@@ -4941,6 +5131,147 @@ function renderTodayCard(){
     ${state.todayOpen?(groups||`<div class="note">Rien d'urgent aujourd'hui. Bonne journée ! ✓</div>`):''}
   </div>`;
 }
+// ─── Couche IA générative (optionnelle, clé API) ─────────────────────────────
+// Construit un contexte compact à partir des données de l'app (RAG local)
+function aiGatherContext(q){
+  const lines=[];
+  const chs=state.chantiers.slice(0,12);
+  if(chs.length){
+    lines.push('CHANTIERS :');
+    chs.forEach(ch=>{const d=ch.d,s=summarize(d);
+      const res=(d.reserves||[]).filter(r=>r.description&&r.statut!=='Levée').length;
+      lines.push(`- ${d.ident.nom||'(sans nom)'} [${d.type||'grosse'}] statut:${s.statut||'?'} marché:${d.finance?.marche||'?'} réserves ouvertes:${res}`);
+    });
+  }
+  const dvs=state.devisData.list.slice(0,15);
+  if(dvs.length){lines.push('','DEVIS :');dvs.forEach(dv=>lines.push(`- ${dv.num||''} ${dv.client||''} — ${dv.statut||'Brouillon'}`));}
+  const cts=state.crmData.contacts.slice(0,20);
+  if(cts.length){lines.push('','CONTACTS CRM :');cts.forEach(c=>lines.push(`- ${c.nom||''}${c.societe?' ('+c.societe+')':''} — ${c.statut||''} ${c.tel||''}`));}
+  // Documents techniques pertinents (avec extrait de texte)
+  const docs=kbSearch(q);
+  if(docs.length){lines.push('','DOCUMENTS TECHNIQUES PERTINENTS :');docs.forEach(dc=>{
+    lines.push(`— ${dc.name}${dc.tags?' ['+dc.tags+']':''}`);
+    if(dc.texte)lines.push(dc.texte.slice(0,3000));
+  });}
+  const rex=rexSearch(q);
+  if(rex.length){lines.push('','RETOURS D\'EXPÉRIENCE :');rex.forEach(r=>lines.push(`- ${r.chantier||''} : difficulté=${r.difficultes||''} / solution=${r.solutions||''} / erreur=${r.erreurs||''}`));}
+  return lines.join('\n').slice(0,14000);
+}
+const AI_SYSTEM_ASSIST="Tu es l'assistant d'un chargé d'affaires BTP (étanchéité, couverture, bardage). Réponds en français, de façon concise et opérationnelle, en t'appuyant STRICTEMENT sur les données fournies (chantiers, devis, CRM, documents techniques, retours d'expérience). Si l'information n'est pas dans les données, dis-le clairement et ne l'invente pas. Cite le nom du document ou du chantier quand c'est utile. Utilise des puces courtes.";
+async function assistAskAI(q){
+  if(!aiReady()||!q||!q.trim()){return;}
+  state.aiBusy=true;render();
+  try{
+    const ctx=aiGatherContext(q);
+    const txt=await callClaude(
+      [{role:'user',content:`Données de mon activité :\n\n${ctx}\n\n---\nQuestion : ${q}`}],
+      {system:AI_SYSTEM_ASSIST,maxTokens:1500}
+    );
+    state.assistAnswer={title:'Réponse Claude',html:`<div class="ai-md">${mdLite(txt)}</div><div class="note" style="margin-top:8px">Réponse générée par Claude à partir de vos données. Vérifiez toujours les points critiques.</div>`};
+  }catch(err){
+    state.assistAnswer={title:'IA indisponible',html:`<div class="note">${esc(err.message||'Erreur')}</div><div class="note" style="margin-top:6px">L'assistant local reste disponible (bouton « Demander »).</div>`};
+  }
+  state.aiBusy=false;render();
+}
+async function kbSummarize(id){
+  const dc=state.kbData.docs.find(x=>x.id===id);
+  if(!dc)return;
+  if(!dc.texte||dc.texte.length<40){toast('Texte non extrait pour ce document (image ou format non lisible).','err',3500);return;}
+  if(!aiReady()){toast('Activez l\'IA dans Réglages (clé API) pour résumer.','err',3500);return;}
+  dc._sum=true;render();
+  try{
+    const txt=await callClaude(
+      [{role:'user',content:`Résume ce document technique BTP en 3 à 5 puces claires (points clés, exigences, valeurs chiffrées importantes). Document « ${dc.name} » :\n\n${dc.texte.slice(0,12000)}`}],
+      {system:'Tu es un expert technique BTP. Résume en français, factuellement, sans inventer.',maxTokens:700}
+    );
+    dc.note=txt.replace(/\s+$/,'');saveKb();
+    toast('Résumé ajouté à la note du document.');
+  }catch(err){toast(err.message||'Erreur IA','err',4000);}
+  delete dc._sum;render();
+}
+// Mini rendu Markdown (puces, gras, retours) — sûr, échappé
+function mdLite(s){
+  return esc(s)
+    .replace(/^\s*[-*]\s+(.*)$/gm,'• $1')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\n/g,'<br>');
+}
+// ─── Rédaction assistée (brouillons pré-remplis, éditables) ───────────────────
+const REDAC_TYPES=[
+  {id:'cr',label:'Compte-rendu de chantier'},
+  {id:'mail',label:'E-mail client'},
+  {id:'ppsps',label:'PPSPS (trame)'},
+  {id:'reserve',label:'Courrier levée de réserves'},
+  {id:'synthese',label:'Synthèse de chantier'}
+];
+function redacBuildLocal(type){
+  const ch=getActive();const d=ch?ch.d:null;
+  const nom=d?(d.ident.nom||'le chantier'):'le chantier';
+  const adr=d?(d.ident.adresse||''):'';
+  const mo=d?(d.ident.mo||d.ident.moa||''):'';
+  const auteur=state.account.name||'le chargé d\'affaires';
+  const societe=state.account.societe||'';
+  const dt=fmtDateFR(todayISO());
+  if(type==='cr'){
+    const jr=d&&(d.journal||[])[0];
+    const retards=d?(d.planning||[]).filter(t=>t.tache&&t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<new Date()):[];
+    const resOuv=d?(d.reserves||[]).filter(r=>r.description&&r.statut!=='Levée'):[];
+    return `COMPTE-RENDU DE CHANTIER\nChantier : ${nom}${adr?' — '+adr:''}\nDate : ${dt}\nRédacteur : ${auteur}${societe?' ('+societe+')':''}\nMaître d'ouvrage : ${mo||'—'}\n\n1) AVANCEMENT\n${jr&&jr.texte?'- '+jr.texte:'- '+(d?Math.round(summarize(d).avancement||0):0)+'% d\'avancement global.'}\n\n2) TRAVAUX RÉALISÉS\n- \n\n3) POINTS EN RETARD / ALERTES\n${retards.length?retards.map(t=>'- '+t.tache+' (échéance dépassée le '+fmtDateFR(t.fin)+')').join('\n'):'- Aucun retard signalé.'}\n\n4) RÉSERVES OUVERTES\n${resOuv.length?resOuv.map(r=>'- '+r.description).join('\n'):'- Aucune.'}\n\n5) DÉCISIONS / ACTIONS À MENER\n- \n\n6) PROCHAIN RENDEZ-VOUS\n- `;
+  }
+  if(type==='mail'){
+    return `Objet : ${nom} — point d'avancement\n\nBonjour${mo?' '+mo:''},\n\nJe reviens vers vous concernant le chantier ${nom}${adr?' ('+adr+')':''}.\n\nÀ ce jour, l'avancement est de ${d?Math.round(summarize(d).avancement||0):0}%. [Décrire ici les travaux réalisés et les prochaines étapes.]\n\n[Points d'attention / questions éventuelles.]\n\nJe reste à votre disposition pour tout complément.\n\nCordialement,\n${auteur}${societe?'\n'+societe:''}`;
+  }
+  if(type==='ppsps'){
+    return `PLAN PARTICULIER DE SÉCURITÉ ET DE PROTECTION DE LA SANTÉ (PPSPS)\nChantier : ${nom}${adr?' — '+adr:''}\nEntreprise : ${societe||'—'}\nDate : ${dt}\n\n1) RENSEIGNEMENTS GÉNÉRAUX\n- Maître d'ouvrage : ${mo||'—'}\n- Nature des travaux : \n- Effectif prévu : \n- Dates d'intervention : \n\n2) ORGANISATION SECOURS\n- Sauveteur secouriste du travail : \n- Trousse de secours : \n- Numéros d'urgence : 15 / 18 / 112\n\n3) RISQUES IDENTIFIÉS ET MESURES\n- Chutes de hauteur : garde-corps, ligne de vie, harnais.\n- Manutention / levage : \n- Produits (bitume, solvants, gaz) : \n- Coactivité : \n\n4) INSTALLATIONS DE CHANTIER\n- Base vie : \n- Stockage matériaux : \n- Évacuation des déchets : benne, tri.\n\n5) MODES OPÉRATOIRES\n- `;
+  }
+  if(type==='reserve'){
+    const resOuv=d?(d.reserves||[]).filter(r=>r.description):[];
+    return `${societe||auteur}\n\nÀ l'attention du Maître d'œuvre / Maître d'ouvrage\n${mo||''}\n\nObjet : Levée de réserves — ${nom}\nDate : ${dt}\n\nMadame, Monsieur,\n\nFaisant suite aux réserves émises lors de la réception des travaux du chantier ${nom}${adr?' ('+adr+')':''}, je vous informe de leur levée :\n\n${resOuv.length?resOuv.map((r,i)=>`${i+1}. ${r.description} — ${r.statut==='Levée'?'LEVÉE le '+(fmtDateFR(r.dateLeveeReel)||dt):'traitement en cours'}`).join('\n'):'[Lister les réserves levées.]'}\n\nJe vous remercie de bien vouloir en prendre acte et de procéder à la levée définitive.\n\nVeuillez agréer, Madame, Monsieur, mes salutations distinguées.\n\n${auteur}${societe?'\n'+societe:''}`;
+  }
+  if(type==='synthese'){
+    const s=d?summarize(d):{};
+    return `SYNTHÈSE DE CHANTIER\nChantier : ${nom}${adr?' — '+adr:''}\nDate : ${dt}\n\n- Statut : ${s.statut||'—'}\n- Avancement : ${d?Math.round(s.avancement||0):0}%\n- Budget / marché : ${d?(d.finance?.marche||'—'):'—'}\n- Réserves : ${d?(d.reserves||[]).filter(r=>r.description).length:0} dont ${d?(d.reserves||[]).filter(r=>r.description&&r.statut!=='Levée').length:0} ouvertes\n\nPOINTS MARQUANTS\n- \n\nDIFFICULTÉS & SOLUTIONS\n- \n\nRECOMMANDATIONS POUR LES PROCHAINS CHANTIERS\n- `;
+  }
+  return'';
+}
+function redacGenerate(){
+  state.redacResult=redacBuildLocal(state.redacType||'cr');
+  render();
+}
+async function redacEnhanceAI(){
+  if(!aiReady()){toast('Activez l\'IA dans Réglages (clé API) pour l\'amélioration.','err',3500);return;}
+  const base=state.redacResult||redacBuildLocal(state.redacType||'cr');
+  const label=(REDAC_TYPES.find(t=>t.id===state.redacType)||{}).label||'document';
+  state.redacBusy=true;render();
+  try{
+    const txt=await callClaude(
+      [{role:'user',content:`Améliore et complète ce brouillon de « ${label} » pour un chantier BTP. Garde exactement les faits et chiffres présents, améliore le style professionnel, complète les rubriques vides avec des formulations pertinentes du métier (étanchéité/couverture/bardage) SANS inventer de faits précis (laisse des [crochets] si une donnée manque). Rends uniquement le texte final :\n\n${base}`}],
+      {system:'Tu es un chargé d\'affaires BTP expérimenté qui rédige des documents clairs et professionnels en français.',maxTokens:2000}
+    );
+    state.redacResult=txt;
+  }catch(err){toast(err.message||'Erreur IA','err',4000);}
+  state.redacBusy=false;render();
+}
+function renderRedac(){
+  const busy=state.redacBusy;
+  return `
+    <div class="card" style="margin-bottom:12px">
+      <div class="note" style="text-transform:none;letter-spacing:0;margin:0 0 8px">Générez un brouillon pré-rempli à partir du chantier actif, éditez-le, puis (optionnel) améliorez-le avec l'IA.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select class="form-select" name="redac.type" style="max-width:260px">
+          ${REDAC_TYPES.map(t=>`<option value="${t.id}"${state.redacType===t.id?' selected':''}>${t.label}</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" data-action="redacGen">${svgIcon(ico.spark,13)} Générer le brouillon</button>
+        ${aiReady()?`<button class="btn btn-ghost btn-sm" data-action="redacAI" ${busy?'disabled':''}>${busy?'IA en cours…':svgIcon(ico.spark,13)+' Améliorer avec l\'IA'}</button>`:`<span class="note" style="margin:0">IA générative désactivée — activez-la dans Réglages pour l'amélioration automatique.</span>`}
+      </div>
+    </div>
+    <div class="card">
+      <textarea class="form-textarea" id="redac-text" name="redac.result" rows="18" placeholder="Le brouillon apparaîtra ici. Choisissez un type puis « Générer le brouillon »." style="width:100%;font-family:inherit;line-height:1.5">${esc(state.redacResult||'')}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" data-action="redacCopy">${svgIcon(ico.copy||ico.folder,13)} Copier</button>
+      </div>
+    </div>`;
+}
 function renderAssistant(){
   const tab=state.assistTab||'today';
   const tabBtn=(id,label,icon)=>`<button class="assist-tab${tab===id?' active':''}" data-action="assistTab" data-tab="${id}">${svgIcon(icon,14)} ${label}</button>`;
@@ -4955,7 +5286,11 @@ function renderAssistant(){
           <input class="form-input" id="assist-input" type="text" value="${esc(state.assistQuery||'')}" placeholder="Posez votre question… (ex : où en est la marge de …)" style="padding-left:38px" onkeydown="if(event.key==='Enter'){event.preventDefault();document.querySelector('[data-action=assistAsk]').click();}">
         </div>
         <div class="assist-sugg">${sugg.map(s=>`<button class="assist-chip" data-action="assistSuggest" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-        <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="assistAsk">${svgIcon(ico.spark,13)} Demander</button></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+          ${aiReady()?`<button class="btn btn-ghost btn-sm" data-action="assistAskAI" ${state.aiBusy?'disabled':''}>${state.aiBusy?'Claude réfléchit…':svgIcon(ico.spark,13)+' Demander à Claude'}</button>`:''}
+          <button class="btn btn-primary btn-sm" data-action="assistAsk">${svgIcon(ico.spark,13)} Demander</button>
+        </div>
+        ${aiReady()?'':`<div class="note" style="margin-top:6px">💡 Activez l'IA générative (clé API) dans Réglages pour des réponses rédigées par Claude à partir de vos données.</div>`}
       </div>
       ${state.assistAnswer?`<div class="card"><div class="card-title">${esc(state.assistAnswer.title)}</div>${state.assistAnswer.html}</div>`:`<div class="note">L'assistant répond à partir de vos chantiers, devis, photos, documents, clients, fournisseurs, cadences et retours d'expérience — 100% en local.</div>`}
     `;
@@ -4982,6 +5317,7 @@ function renderAssistant(){
               <input class="form-input" type="text" name="kb.docs.${i}.tags" value="${esc(dc.tags||'')}" placeholder="Mots-clés (ex : DTU 43.1, terrasse)">
               <input class="form-input" type="text" name="kb.docs.${i}.note" value="${esc(dc.note||'')}" placeholder="Note / résumé" style="grid-column:1/-1">
             </div>
+            <div class="doc-meta" style="margin-top:4px">${dc.texte?`Texte indexé (${Math.round(dc.texte.length/100)/10} k car.) — recherchable par l'assistant`:'Texte non extrait (image ou format non lisible)'}${aiReady()&&dc.texte?` · <a href="#" data-action="kbSummarize" data-id="${dc.id}" style="color:var(--acc)">${dc._sum?'Résumé en cours…':'Résumer avec l\'IA'}</a>`:''}</div>
           </div>
           <button class="btn btn-danger btn-icon btn-sm" data-action="delKbDoc" data-id="${dc.id}">${svgIcon(ico.trash,13)}</button>
         </div>`;}).join(''):`<div class="ck-card" style="text-align:center;color:var(--sub);padding:24px">Aucun document. Ajoutez vos DTU, avis techniques, CCTP, notices fabricants…<br><span class="note">Astuce : renseignez des mots-clés pour que l'assistant retrouve et cite le bon document.</span></div>`}
@@ -5012,6 +5348,7 @@ function renderAssistant(){
         </div>`;}).join(''):`<div class="ck-card" style="text-align:center;color:var(--sub);padding:24px">Aucun retour d'expérience enregistré.<br><span class="note">Chaque retour devient une mémoire consultable automatiquement par l'assistant.</span></div>`}
     `;
   }
+  else if(tab==='redac'){body=renderRedac();}
   return`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
       <div><h1 class="page-title" style="margin:0">${svgIcon(ico.spark,18)} Assistant IA</h1>
@@ -5022,6 +5359,7 @@ function renderAssistant(){
       ${tabBtn('ask','Demander',ico.spark)}
       ${tabBtn('kb','Bibliothèque technique',ico.folder)}
       ${tabBtn('rex','Mémoire métier',ico.brief)}
+      ${tabBtn('redac','Rédaction',ico.cr)}
     </div>
     ${body}
   `;
