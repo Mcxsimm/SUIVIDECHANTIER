@@ -516,6 +516,34 @@ body.dark .nt-item .nt-ico{background:#3a2c1a}
   #mobile-nav button svg{width:22px;height:22px}
 }
 @media(min-width:761px){ .fab{display:none} }
+/* Assistant IA */
+.assist-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.assist-tab{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--sub);font-size:13px;font-weight:600;cursor:pointer}
+.assist-tab.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.assist-list{display:flex;flex-direction:column;gap:5px}
+.assist-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--card);cursor:pointer}
+.assist-item:hover{border-color:var(--acc)}
+.ai-name{font-size:13px;font-weight:600;color:var(--text)}
+.ai-sub{font-size:11px;color:var(--sub);margin-top:1px}
+.ai-go{color:var(--acc);font-weight:700;flex-shrink:0}
+.assist-sub{font-size:12px;font-weight:700;color:var(--acc);margin:12px 0 6px}
+.assist-table{width:100%;border-collapse:collapse}
+.assist-table td{padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px}
+.assist-table td:last-child{text-align:right}
+.assist-sugg{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.assist-chip{padding:5px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);color:var(--sub);font-size:12px;cursor:pointer}
+.assist-chip:hover{border-color:var(--acc);color:var(--acc)}
+.assist-chip.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.kb-cats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.assist-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.assist-photo{padding:0;border:1px solid var(--border);border-radius:9px;overflow:hidden;cursor:pointer;background:var(--card);position:relative}
+.assist-photo img{width:100%;height:90px;object-fit:cover;display:block}
+.assist-photo span{display:block;font-size:11px;color:var(--sub);padding:4px 6px}
+.today-group{margin-bottom:10px}
+.today-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--text);margin-bottom:5px}
+.today-n{color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:2px}
+.assist-fab{position:fixed;right:18px;bottom:78px;z-index:60;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#3d92ff);color:#fff;border:none;box-shadow:0 6px 18px rgba(0,112,242,.4);cursor:pointer;display:flex;align-items:center;justify-content:center}
+@media(min-width:761px){ .assist-fab{bottom:24px} }
 </style>
 </head>
 <body>
@@ -711,6 +739,8 @@ const DEVIS_KEY='suivi_chantier_devis_v1';
 const BIB_KEY='suivi_chantier_bib_v1';
 const BPU_KEY='suivi_chantier_bpu_v1';
 const KPI_KEY='suivi_chantier_kpi_v1';
+const KB_KEY='suivi_chantier_kb_v1';
+const REX_KEY='suivi_chantier_rex_v1';
 const BACKUP_KEY='suivi_chantier_last_backup';
 let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWeek:weekKey(new Date()),hTab:'semaine',
   taskView:'liste',theme:'light',docQuery:'',
@@ -719,6 +749,8 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   devisData:{list:[]},devisId:null,assistantOpen:false,
   bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
   kpiData:{aoRecus:'',aoDeposes:'',satisfaction:'',periode:''},kpiOpen:true,
+  kbData:{docs:[]},rexData:{list:[]},
+  assistTab:'today',assistQuery:'',assistAnswer:null,kbQuery:'',kbCat:'all',todayOpen:true,
   bibUser:[],bibFormOpen:false,
   searchQ:'',notifOpen:false,lastSaved:null};
 function navWeek(dir){state.hWeek=dir==='prev'?prevWeek(state.hWeek):nextWeek(state.hWeek);render();}
@@ -755,6 +787,8 @@ function load(){
   try{const b=JSON.parse(localStorage.getItem(BIB_KEY)||'null');if(b&&Array.isArray(b))state.bibUser=b;}catch(e){}
   try{const p=JSON.parse(localStorage.getItem(BPU_KEY)||'null');if(p&&Array.isArray(p.list))state.bpuData=p;}catch(e){}
   try{const k=JSON.parse(localStorage.getItem(KPI_KEY)||'null');if(k&&typeof k==='object')state.kpiData=Object.assign(state.kpiData,k);}catch(e){}
+  try{const kb=JSON.parse(localStorage.getItem(KB_KEY)||'null');if(kb&&Array.isArray(kb.docs))state.kbData=kb;}catch(e){}
+  try{const rx=JSON.parse(localStorage.getItem(REX_KEY)||'null');if(rx&&Array.isArray(rx.list))state.rexData=rx;}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
 function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
@@ -762,6 +796,8 @@ function saveDevis(){try{localStorage.setItem(DEVIS_KEY,JSON.stringify(state.dev
 function saveBib(){try{localStorage.setItem(BIB_KEY,JSON.stringify(state.bibUser));markSaved();}catch(e){}}
 function saveBpu(){try{localStorage.setItem(BPU_KEY,JSON.stringify(state.bpuData));markSaved();}catch(e){}}
 function saveKpi(){try{localStorage.setItem(KPI_KEY,JSON.stringify(state.kpiData));markSaved();}catch(e){}}
+function saveKb(){try{localStorage.setItem(KB_KEY,JSON.stringify(state.kbData));markSaved();}catch(e){}}
+function saveRex(){try{localStorage.setItem(REX_KEY,JSON.stringify(state.rexData));markSaved();}catch(e){}}
 // Bibliothèque complète : références perso (en tête) + base intégrée
 function getBib(){return state.bibUser.concat(BIB_CADENCES);}
 // ─── BPU (Bordereau de Prix Unitaires) liés aux prospects/clients ───────────
@@ -786,15 +822,15 @@ function bpuLinesToDevis(b){
 // Setter générique pour les stores globaux (CRM & Devis) — même mécanique que setD
 function setGlobalD(path,value){
   const parts=path.split('.');
-  const root=parts.shift(); // 'crm' | 'devis' | 'bpu' | 'kpi'
-  let obj=root==='crm'?state.crmData:root==='bpu'?state.bpuData:root==='kpi'?state.kpiData:state.devisData;
+  const root=parts.shift(); // 'crm' | 'devis' | 'bpu' | 'kpi' | 'kb' | 'rex'
+  let obj=root==='crm'?state.crmData:root==='bpu'?state.bpuData:root==='kpi'?state.kpiData:root==='kb'?state.kbData:root==='rex'?state.rexData:state.devisData;
   for(let i=0;i<parts.length-1;i++){
     const k=parts[i];const nk=parts[i+1];
     if(obj[k]===undefined||obj[k]===null)obj[k]=/^\d+$/.test(nk)?[]:{};
     obj=obj[k];
   }
   obj[parts[parts.length-1]]=value;
-  if(root==='crm')saveCrm();else if(root==='bpu')saveBpu();else if(root==='kpi')saveKpi();else saveDevis();
+  if(root==='crm')saveCrm();else if(root==='bpu')saveBpu();else if(root==='kpi')saveKpi();else if(root==='kb')saveKb();else if(root==='rex')saveRex();else saveDevis();
 }
 function accountInitials(){
   const nm=(state.account&&state.account.name||'').trim();
@@ -964,12 +1000,12 @@ function notifPanel(){
 }
 
 // ─── Recherche globale (chantiers, tâches, réserves, docs, CRM, devis…) ──────
-const SEARCH_CAT_ORDER=['Chantiers','Tâches','Réserves','Documents','Journal','Sous-traitants','Fournisseurs','Contacts CRM','Devis','BPU'];
+const SEARCH_CAT_ORDER=['Chantiers','Tâches','Réserves','Documents','Journal','Sous-traitants','Fournisseurs','Contacts CRM','Devis','BPU','Photos','Bibliothèque technique','Mémoire métier'];
 function globalSearchResults(q){
-  q=q.trim().toLowerCase();
+  q=deacc(q.trim());
   if(q.length<2)return[];
   const out=[];
-  const M=s=>String(s||'').toLowerCase().includes(q);
+  const M=s=>deacc(String(s||'')).includes(q);
   const push=(cat,icon,name,sub,go)=>out.push({cat,icon,name,sub,go});
   state.chantiers.forEach(ch=>{
     const d=ch.d,nom=d.ident.nom||'Sans nom';
@@ -980,10 +1016,13 @@ function globalSearchResults(q){
     (d.journal||[]).forEach(e=>{if(M(e.travaux)||M(e.problemes)||M(e.decisions))push('Journal',ico.journal,(e.travaux||e.problemes||'Entrée de journal').slice(0,60),nom+' · '+fmtDateFR(e.date),{ch:ch.id,screen:'journal'});});
     d.st.forEach(s=>{if(s.entreprise&&M(s.entreprise))push('Sous-traitants',ico.st,s.entreprise,nom+(s.lot?' · '+s.lot:''),{ch:ch.id,screen:'st'});});
     d.fournisseurs.forEach(f=>{if(f.fournisseur&&(M(f.fournisseur)||M(f.designation)))push('Fournisseurs',ico.fourn,f.fournisseur,nom+(f.designation?' · '+f.designation:''),{ch:ch.id,screen:'fournisseurs'});});
+    (d.photos||[]).forEach(p=>{if(p.note&&M(p.note))push('Photos',ico.camera,p.note.slice(0,50),nom+' · '+fmtDateFR(p.date),{ch:ch.id,screen:'photos'});});
   });
-  state.crmData.contacts.forEach(ct=>{if(ct.nom&&(M(ct.nom)||M(ct.societe)||M(ct.email)))push('Contacts CRM',ico.crm,ct.nom,ct.societe||ct.email||'',{screen:'crm'});});
-  state.devisData.list.forEach(dv=>{if(M(dv.num)||M(dv.client))push('Devis',ico.devis,(dv.num||'Devis')+(dv.client?' — '+dv.client:''),dv.statut||'',{screen:'devis',devis:dv.id});});
+  state.crmData.contacts.forEach(ct=>{if(ct.nom&&(M(ct.nom)||M(ct.societe)||M(ct.email)||M(ct.adresse)))push('Contacts CRM',ico.crm,ct.nom,ct.societe||ct.email||'',{screen:'crm'});});
+  state.devisData.list.forEach(dv=>{if(M(dv.num)||M(dv.client)||M(dv.bc))push('Devis',ico.devis,(dv.num||'Devis')+(dv.client?' — '+dv.client:''),dv.statut||'',{screen:'devis',devis:dv.id});});
   state.bpuData.list.forEach(b=>{if(M(b.nom)||M(b.client)||(b.lignes||[]).some(l=>M(l.designation)))push('BPU',ico.list,(b.nom||'BPU')+(b.client?' — '+b.client:''),(b.lignes||[]).filter(l=>l.designation).length+' ligne(s)',{screen:'bpu',bpu:b.id});});
+  (state.kbData.docs||[]).forEach(dc=>{if(M(dc.name)||M(dc.categorie)||M(dc.tags)||M(dc.note)||M(dc.texte))push('Bibliothèque technique',ico.folder,dc.name,dc.categorie+(dc.tags?' · '+dc.tags:''),{screen:'assistant'});});
+  (state.rexData.list||[]).forEach(r=>{if(M(r.chantier)||M(r.difficultes)||M(r.solutions)||M(r.materiaux))push('Mémoire métier',ico.brief,r.chantier||'Retour d\'expérience',(r.difficultes||r.solutions||'').slice(0,50),{screen:'assistant'});});
   const byCat={};const limited=[];
   for(const r of out){byCat[r.cat]=(byCat[r.cat]||0)+1;if(byCat[r.cat]<=5)limited.push(r);if(limited.length>=24)break;}
   limited.sort((a,b)=>SEARCH_CAT_ORDER.indexOf(a.cat)-SEARCH_CAT_ORDER.indexOf(b.cat));
@@ -1019,7 +1058,7 @@ function searchGo(i){
 function storageInfo(){
   try{
     let bytes=0;
-    for(const k of[KEY,CRM_KEY,DEVIS_KEY,BIB_KEY,BPU_KEY,KPI_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
+    for(const k of[KEY,CRM_KEY,DEVIS_KEY,BIB_KEY,BPU_KEY,KPI_KEY,KB_KEY,REX_KEY,ACC_KEY]){const v=localStorage.getItem(k);if(v)bytes+=v.length*2;}
     const mb=bytes/1048576;
     return'Données locales : '+(mb>=1?mb.toFixed(1).replace('.',',')+' Mo':Math.max(1,Math.round(bytes/1024))+' Ko');
   }catch(e){return''}
@@ -1061,7 +1100,7 @@ function accountEdit(){state.account.connected=false;saveAccount();render();}
 function exportBackup(){
   const data=JSON.stringify({app:'suivi-chantier',version:2,exportedAt:new Date().toISOString(),
     account:state.account,activeId:state.activeId,chantiers:state.chantiers,
-    crm:state.crmData,devis:state.devisData,bib:state.bibUser,bpu:state.bpuData,kpi:state.kpiData},null,2);
+    crm:state.crmData,devis:state.devisData,bib:state.bibUser,bpu:state.bpuData,kpi:state.kpiData,kb:state.kbData,rex:state.rexData},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='suivi-chantier-sauvegarde-'+todayISO()+'.json';
@@ -1080,6 +1119,8 @@ function importBackupData(parsed){
   if(Array.isArray(parsed.bib)){state.bibUser=parsed.bib;saveBib();}
   if(parsed.bpu&&Array.isArray(parsed.bpu.list)){state.bpuData=parsed.bpu;saveBpu();}
   if(parsed.kpi&&typeof parsed.kpi==='object'){state.kpiData=Object.assign(state.kpiData,parsed.kpi);saveKpi();}
+  if(parsed.kb&&Array.isArray(parsed.kb.docs)){state.kbData=parsed.kb;saveKb();}
+  if(parsed.rex&&Array.isArray(parsed.rex.list)){state.rexData=parsed.rex;saveRex();}
   save();state.accountOpen=false;state.screen='hub';render();
   alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
@@ -1535,7 +1576,7 @@ document.addEventListener('change',e=>{
   if(!name)return;
   const val=t.type==='checkbox'?t.checked:t.value;
   // Champs des stores globaux (CRM / Devis) — indépendants du chantier actif
-  if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')||name.startsWith('kpi.')){
+  if(name.startsWith('crm.')||name.startsWith('devis.')||name.startsWith('bpu.')||name.startsWith('kpi.')||name.startsWith('kb.')||name.startsWith('rex.')){
     setGlobalD(name,val);
     // BPU : lier un contact CRM pré-remplit le nom client affiché
     if(/^bpu\.list\.\d+\.contactId$/.test(name)){
@@ -1884,6 +1925,21 @@ document.addEventListener('click',e=>{
     if(action==='exportSynthese'){exportSynthesePdf();return;}
     if(action==='exportPetite'){exportPetitePdf();return;}
     if(action==='toggleKpi'){state.kpiOpen=!state.kpiOpen;render();return;}
+    // ── Assistant IA ──
+    if(action==='openAssistant'){state.screen='assistant';render();return;}
+    if(action==='toggleToday'){state.todayOpen=!state.todayOpen;render();return;}
+    if(action==='assistTab'){state.assistTab=btn.dataset.tab;render();return;}
+    if(action==='navTo'){const g=btn.dataset;if(g.ch)state.activeId=g.ch;if(g.devis)state.devisId=g.devis;if(g.bpu)state.bpuId=g.bpu;state.screen=g.scr||'home';render();return;}
+    if(action==='assistSuggest'){state.assistQuery=btn.dataset.q;state.assistAnswer=answerAssistant(state.assistQuery);state.assistTab='ask';render();return;}
+    if(action==='assistAsk'){const el=document.getElementById('assist-input');const q=el?el.value:'';state.assistQuery=q;state.assistAnswer=answerAssistant(q);render();return;}
+    if(action==='kbCat'){state.kbCat=btn.dataset.cat;render();return;}
+    if(action==='delKbDoc'){if(confirm('Supprimer ce document de la bibliothèque technique ?')){state.kbData.docs=state.kbData.docs.filter(x=>x.id!==id);saveKb();render();}return;}
+    if(action==='addRex'){
+      const nom=getActive()?getActive().d.ident.nom:'';
+      state.rexData.list.unshift({id:'rx'+Date.now(),chantier:nom||'',date:todayISO(),difficultes:'',solutions:'',erreurs:'',fournisseurs:'',materiaux:'',dureeReelle:'',rendement:''});
+      state.assistTab='rex';saveRex();render();return;
+    }
+    if(action==='delRex'){if(confirm('Supprimer ce retour d\'expérience ?')){state.rexData.list=state.rexData.list.filter(x=>x.id!==id);saveRex();render();}return;}
     if(action==='fabTasks'){const i=document.getElementById('qa-input');if(i){window.scrollTo(0,0);i.focus();}return;}
     if(action==='fabPhoto'){const i=document.querySelector('[data-photo-new]');if(i)i.click();return;}
     if(action==='fabCrm'){const i=document.getElementById('crm-qa');if(i){window.scrollTo(0,0);i.focus();}return;}
@@ -1913,6 +1969,19 @@ document.addEventListener('change',async e=>{
     try{const txt=await inp.files[0].text();importBackupData(JSON.parse(txt));}
     catch(err){console.warn(err);alert('Fichier illisible ou invalide.');}
     inp.value='';return;
+  }
+  // Base de connaissances / Bibliothèque technique (global, indépendant du chantier)
+  if(inp.dataset.kbNew!==undefined){
+    const files=Array.from(inp.files);
+    for(const f of files){
+      let src='',txt='';
+      if(f.size<3000000){try{src=await fileToDataURLRaw(f);}catch(_){}}
+      // extraction de texte pour les formats texte (indexation)
+      if(/\.(txt|csv|md|json)$/i.test(f.name)&&f.size<1000000){try{txt=(await f.text()).slice(0,20000);}catch(_){}}
+      state.kbData.docs.unshift({id:'kb'+Date.now()+Math.random().toString(36).slice(2,6),name:f.name,
+        categorie:guessKbCat(f.name),date:todayISO(),tags:'',note:'',texte:txt,src,size:f.size});
+    }
+    inp.value='';saveKb();render();return;
   }
   const ch=getActive();if(!ch)return;const d=ch.d;
   const jrId=inp.dataset.photoJournal;
@@ -3455,6 +3524,9 @@ function renderHub(){
         ${card('bpu',ico.list,'#6c4bb6','#efe9fb','Bordereaux BPU',
           'Vos bordereaux de prix unitaires par client, réutilisables en un clic pour générer un devis.',
           nbBpu?nbBpu+' BPU'+(nbBpu>1?'s':''):'Créer un BPU')}
+        ${card('assistant',ico.spark,'#0a7c8a','#e0f7fa','Assistant IA',
+          'Votre second cerveau : « Aujourd\'hui », questions en langage naturel, bibliothèque technique et mémoire métier. 100% local.',
+          'Ouvrir l\'assistant')}
       </div>
     </div>
   `;
@@ -4010,7 +4082,7 @@ function renderMobileNav(){
   // Hub : page de sélection plein écran, pas de barre
   if(state.screen==='hub'){el.innerHTML='';return;}
   // Écrans applications : barre Menu / Chantiers / CRM / Devis
-  if(['portfolio','crm','devis','bpu'].includes(state.screen)){
+  if(['portfolio','crm','devis','bpu','assistant'].includes(state.screen)){
     el.innerHTML=APPS_NAV.map(it=>`<button class="${state.screen===it.screen?'active':''}" data-screen="${it.screen}">${svgIcon(it.icon,22)}<span>${it.label}</span></button>`).join('');
     return;
   }
@@ -4046,7 +4118,7 @@ function render(){
     if(el){try{el.focus({preventScroll:true});if(car!=null&&el.setSelectionRange)el.setSelectionRange(car,car);}catch(e){}}
   }
 }
-const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',bpu:'BPU',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
+const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',bpu:'BPU',assistant:'Assistant IA',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
 function renderMain(){
   applyTheme();
   document.title=(SCREEN_TITLES[state.screen]?SCREEN_TITLES[state.screen]+' — ':'')+'Suivi de Chantier Pro';
@@ -4078,6 +4150,13 @@ function renderMain(){
     renderFab();return;
   }
   if(state.screen==='bpu'){main.innerHTML=renderBpu();renderFab();return;}
+  if(state.screen==='assistant'){
+    main.innerHTML=renderAssistant();
+    const ai=document.getElementById('assist-input');if(ai){ai.focus();ai.setSelectionRange(ai.value.length,ai.value.length);}
+    const ks=document.getElementById('kb-search');
+    if(ks)ks.addEventListener('input',e=>{state.kbQuery=e.target.value;render();const el=document.getElementById('kb-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}});
+    renderFab();return;
+  }
   if(state.screen==='portfolio'){
     main.innerHTML=renderPortfolio();
     const pfs=document.getElementById('pf-search');
@@ -4151,6 +4230,9 @@ function renderShell(){
     </div>
     <div class="spacer"></div>
     <span class="save-ind" id="save-ind">${savedLabel()}</span>
+    <button class="icon-btn" data-action="openAssistant" title="Assistant IA" aria-label="Assistant IA" style="color:var(--acc)">
+      ${svgIcon(ico.spark,18)}
+    </button>
     <button class="icon-btn" data-action="toggleTheme" title="${state.theme==='dark'?'Mode clair':'Mode sombre'}" aria-label="${state.theme==='dark'?'Passer en mode clair':'Passer en mode sombre'}">
       ${svgIcon(state.theme==='dark'?ico.sun:ico.moon,18)}
     </button>
@@ -4210,6 +4292,7 @@ const APPS_NAV=[
   {screen:'crm',icon:ico.crm,label:'CRM'},
   {screen:'devis',icon:ico.devis,label:'Devis'},
   {screen:'bpu',icon:ico.list,label:'BPU'},
+  {screen:'assistant',icon:ico.spark,label:'Assistant'},
 ];
 
 const NAV_ITEMS=[
@@ -4698,6 +4781,252 @@ function renderKpiTile(){
   </div>`;
 }
 
+// ═══════════ Assistant IA — Second cerveau (100% local) ═══════════
+const KB_CATS=['DTU','Avis technique','CPT','CCTP','CCTG','Notice fabricant','Fiche technique','Plan','BPU / Prix','Cadences','Guide CSTB','REX','Note perso','Méthode interne','Autre'];
+function guessKbCat(name){const n=(name||'').toLowerCase();
+  if(/dtu/.test(n))return'DTU';if(/avis|atec|dta/.test(n))return'Avis technique';if(/cctp/.test(n))return'CCTP';
+  if(/cctg/.test(n))return'CCTG';if(/cpt/.test(n))return'CPT';if(/notice|fiche|ft[-_ ]|fds/.test(n))return'Notice fabricant';
+  if(/plan|dwg|dxf|dpgf/.test(n))return'Plan';if(/bpu|prix|dqe/.test(n))return'BPU / Prix';if(/cadence|rendement/.test(n))return'Cadences';
+  if(/cstb/.test(n))return'Guide CSTB';if(/rex|retour/.test(n))return'REX';if(/methode|mode op/.test(n))return'Méthode interne';
+  return'Autre';}
+// Briefing « Aujourd'hui » — agrège ce qu'il faut savoir/faire, sans configuration
+function computeToday(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const in7=new Date(today.getTime()+7*86400000);
+  const it={urgences:[],devis:[],echeances:[],reserves:[],budget:[],commandes:[],appels:[],meteo:''};
+  state.devisData.list.forEach(dv=>{
+    if(dv.statut==='Brouillon')it.devis.push({t:(dv.num||'Devis')+(dv.client?' · '+esc(dv.client):''),s:'à finaliser / envoyer',ch:'',scr:'devis',devis:dv.id});
+    else if(dv.statut==='Envoyé')it.devis.push({t:(dv.num||'Devis')+(dv.client?' · '+esc(dv.client):''),s:'envoyé — à relancer',scr:'devis',devis:dv.id});
+  });
+  state.crmData.contacts.forEach(ct=>{if(ct.nom&&(ct.statut==='À contacter'||ct.statut==='Relancé'))it.appels.push({t:ct.nom+(ct.societe?' ('+ct.societe+')':''),s:(ct.tel||'')+' · '+ct.statut,scr:'crm'});});
+  state.chantiers.forEach(ch=>{
+    const d=ch.d,nom=d.ident.nom||'Chantier',s=summarize(d);
+    (d.planning||[]).forEach(t=>{if(t.tache&&t.fin&&normStatut(t.statut)!=='Terminé'){const f=new Date(t.fin);
+      if(f<today)it.urgences.push({t:t.tache,s:nom+' · en retard depuis le '+fmtDateFR(t.fin),ch:ch.id,scr:'tasks'});
+      else if(f<=in7)it.echeances.push({t:t.tache,s:nom+' · '+fmtDateFR(t.fin),dd:t.fin,ch:ch.id,scr:'tasks'});}});
+    (d.jalons||[]).forEach(j=>{if(j.nom&&j.datePrev&&!j.dateReel){const f=new Date(j.datePrev);if(f>=today&&f<=in7)it.echeances.push({t:j.nom,s:nom+' · jalon '+fmtDateFR(j.datePrev),dd:j.datePrev,ch:ch.id,scr:'home'});}});
+    (d.reserves||[]).forEach(r=>{if(r.description&&r.statut==='Ouverte')it.reserves.push({t:r.description,s:nom+(r.dateLeveePrev?' · à lever avant '+fmtDateFR(r.dateLeveePrev):''),ch:ch.id,scr:'reserves'});});
+    if((s.budgetCR||0)>0&&s.marge<0)it.budget.push({t:nom,s:'dépassement '+eurRaw(-s.marge)+' ('+pct(s.taux)+')',ch:ch.id,scr:'finance'});
+    (d.fournisseurs||[]).forEach(fo=>{if(fo.fournisseur&&fo.recu==='Non')it.commandes.push({t:(fo.designation||fo.fournisseur),s:nom+' · '+fo.fournisseur+(fo.livraison?' · livr. '+fmtDateFR(fo.livraison):''),ch:ch.id,scr:'fournisseurs'});});
+  });
+  it.echeances.sort((a,b)=>(a.dd||'').localeCompare(b.dd||''));
+  const act=getActive();if(act){const j=(act.d.journal||[])[0];if(j&&j.meteo)it.meteo=j.meteo;}
+  return it;
+}
+// Retrouve la meilleure affaire (chantier/devis) évoquée dans une question
+function assistFindAffaire(q){
+  const qn=deacc(q);
+  let best=null,bestScore=0;
+  state.chantiers.forEach(ch=>{const nm=deacc((ch.d.ident.nom||'')+' '+(ch.d.ident.otp||'')+' '+(ch.d.ident.mo||'')+' '+((ch.d.petite||{}).client||''));
+    nm.split(/\s+/).filter(w=>w.length>2).forEach(w=>{if(qn.includes(w)){const sc=w.length;if(sc>bestScore){bestScore=sc;best={type:'chantier',ch};}}});});
+  state.devisData.list.forEach(dv=>{const nm=deacc((dv.num||'')+' '+(dv.client||''));
+    nm.split(/\s+/).filter(w=>w.length>2).forEach(w=>{if(qn.includes(w)){const sc=w.length;if(sc>bestScore){bestScore=sc;best={type:'devis',dv};}}});});
+  return best;
+}
+function kbSearch(q){const qs=deacc(q).split(/\s+/).filter(w=>w.length>2);if(!qs.length)return[];
+  return state.kbData.docs.map(dc=>{const hay=deacc([dc.name,dc.categorie,dc.tags,dc.note,dc.texte].join(' '));
+    let sc=0;qs.forEach(w=>{if(hay.includes(w))sc++;});return{dc,sc};}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,8).map(x=>x.dc);}
+function rexSearch(q){const qs=deacc(q).split(/\s+/).filter(w=>w.length>2);if(!qs.length)return[];
+  return state.rexData.list.map(r=>{const hay=deacc([r.chantier,r.difficultes,r.solutions,r.erreurs,r.fournisseurs,r.materiaux].join(' '));
+    let sc=0;qs.forEach(w=>{if(hay.includes(w))sc++;});return{r,sc};}).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,6).map(x=>x.r);}
+function photoSearch(q){const qs=deacc(q).split(/\s+/).filter(w=>w.length>2);const out=[];
+  state.chantiers.forEach(ch=>{(ch.d.photos||[]).forEach(p=>{const hay=deacc((p.note||'')+' '+(p.link||'')+' '+(ch.d.ident.nom||''));
+    let sc=0;qs.forEach(w=>{if(hay.includes(w))sc++;});if(sc>0||(!qs.length))out.push({p,ch,sc});});});
+  return out.sort((a,b)=>b.sc-a.sc).slice(0,12);}
+// Moteur de réponse local — associe la question à une intention et répond depuis les données
+function answerAssistant(q){
+  const raw=(q||'').trim();if(!raw)return null;
+  const t=deacc(raw);
+  const li=(items,empty)=>items.length?`<div class="assist-list">${items.map(x=>`<button class="assist-item" data-action="navTo" ${x.ch?`data-ch="${x.ch}"`:''} data-scr="${x.scr||'home'}" ${x.devis?`data-devis="${x.devis}"`:''}><div><div class="ai-name">${x.t}</div>${x.s?`<div class="ai-sub">${x.s}</div>`:''}</div><span class="ai-go">→</span></button>`).join('')}</div>`:`<div class="note">${empty||'Rien à afficher.'}</div>`;
+  const wrap=(title,body,tip)=>({title,html:body+(tip?`<div class="note" style="margin-top:8px">${tip}</div>`:'')});
+  // Mémoire métier (REX) — « as-tu déjà rencontré… »
+  if(/\bdeja\b|meme probleme|rencontr|as-tu|avais-tu|retour d.?exp|\brex\b|autre chantier|cas similaire|deja eu|deja vu/.test(t)){
+    const rex=rexSearch(raw);
+    if(rex.length)return wrap('Mémoire métier — cas similaires',`<div class="assist-list">${rex.map(r=>`<button class="assist-item" data-action="assistTab" data-tab="rex"><div><div class="ai-name">${esc(r.chantier||'Retour d\'expérience')}</div><div class="ai-sub">${esc((r.difficultes||'').slice(0,70))}${r.solutions?' → '+esc(r.solutions.slice(0,60)):''}</div></div><span class="ai-go">→</span></button>`).join('')}</div>`,'Vos retours d\'expérience enregistrés qui correspondent à cette situation.');
+    return wrap('Mémoire métier',`<div class="note">Aucun retour d'expérience correspondant. Enregistrez vos difficultés/solutions en fin de chantier (onglet « Mémoire métier ») pour les retrouver automatiquement ici.</div>`);
+  }
+  // Photos
+  if(/\bphoto|image|cliche|fissur|acrotere|avant apres|avant-apres/.test(t)){
+    const res=photoSearch(raw.replace(/retrouve|photo|image|la|le|ou|où|est|etait|était/gi,' '));
+    if(res.length)return wrap('Photos correspondantes',`<div class="assist-photos">${res.map(x=>`<button class="assist-photo" data-action="navTo" data-ch="${x.ch.id}" data-scr="photos"><img src="${x.p.src}" alt="">${x.p.note?`<span>${esc(x.p.note)}</span>`:''}</button>`).join('')}</div>`,'Cliquez une photo pour ouvrir la galerie du chantier.');
+    return wrap('Photos','<div class="note">Aucune photo ne correspond. Ajoutez une note aux photos pour les rendre retrouvables.</div>');
+  }
+  // Prochain chantier / intervention
+  if(/prochain|prochaine|a venir|à venir|planifi|demain|cette semaine/.test(t)){
+    const td=computeToday();
+    return wrap('Prochaines échéances',li(td.echeances.slice(0,10),'Aucune échéance dans les 7 jours.'),'Basé sur le planning et les jalons de vos chantiers.');
+  }
+  // Matériaux / commandes
+  if(/materiau|matériaux|commande|commander|approvision|livraison|a commander/.test(t)){
+    const td=computeToday();
+    return wrap('Matériaux & commandes à passer',li(td.commandes.slice(0,15),'Aucune commande en attente (fournisseurs marqués « reçu »).'),'Fournisseurs non reçus sur tous les chantiers.');
+  }
+  // Devis à envoyer / relancer
+  if(/devis/.test(t)&&/(envoy|relanc|attente|faire|a faire|à faire)/.test(t)){
+    const td=computeToday();
+    return wrap('Devis à traiter',li(td.devis,'Aucun devis en attente.'));
+  }
+  // Points bloquants / problèmes / marge / où en est
+  const aff=assistFindAffaire(raw);
+  if(/bloqu|probleme|problème|risque|alerte|en retard|reserve|réserve/.test(t)){
+    if(aff&&aff.type==='chantier'){const d=aff.ch.d,nom=d.ident.nom||'Chantier',s=summarize(d);
+      const res=(d.reserves||[]).filter(r=>r.description&&r.statut==='Ouverte').map(r=>({t:r.description,s:'réserve ouverte'+(r.dateLeveePrev?' · '+fmtDateFR(r.dateLeveePrev):''),ch:aff.ch.id,scr:'reserves'}));
+      const ret=(d.planning||[]).filter(x=>x.tache&&x.fin&&normStatut(x.statut)!=='Terminé'&&new Date(x.fin)<new Date()).map(x=>({t:x.tache,s:'tâche en retard',ch:aff.ch.id,scr:'tasks'}));
+      const bud=(s.budgetCR>0&&s.marge<0)?[{t:'Dépassement budget '+eurRaw(-s.marge),s:pct(s.taux)+' de marge',ch:aff.ch.id,scr:'finance'}]:[];
+      const all=bud.concat(ret,res);
+      return wrap('Points bloquants — '+esc(nom),li(all,'Aucun point bloquant identifié ✓'),'Réserves ouvertes, tâches en retard et alerte budget.');
+    }
+    const td=computeToday();return wrap('Points de vigilance (tous chantiers)',li(td.urgences.concat(td.budget,td.reserves).slice(0,15),'Aucun point bloquant ✓'));
+  }
+  if(/marge|ou en est|où en est|avancement|point sur|situation|etat|état/.test(t)&&aff){
+    if(aff.type==='chantier'){const d=aff.ch.d,s=summarize(d);
+      const rows=[['Statut',s.statut],['Avancement',Math.round(s.avancement||0)+'%'],['Marché',s.marcheActualise>0?eurRaw(s.marcheActualise):'—'],['Marge',s.budgetCR>0?eurRaw(s.marge)+' · '+pct(s.taux):'—'],['Alertes',String(s.alertCount||0)],['Retards',String(s.retards||0)]];
+      return wrap('Où en est — '+esc(d.ident.nom||'Chantier'),`<table class="assist-table">${rows.map(r=>`<tr><td>${r[0]}</td><td><strong>${r[1]}</strong></td></tr>`).join('')}</table><div class="assist-list" style="margin-top:8px"><button class="assist-item" data-action="navTo" data-ch="${aff.ch.id}" data-scr="home"><div class="ai-name">Ouvrir le cockpit du chantier</div><span class="ai-go">→</span></button></div>`);
+    }
+    if(aff.type==='devis'){const dv=aff.dv,tt=devisTotals(dv);
+      return wrap('Devis '+esc(dv.num||''),`<table class="assist-table"><tr><td>Client</td><td><strong>${esc(dv.client||'—')}</strong></td></tr><tr><td>Statut</td><td><strong>${esc(dv.statut)}</strong></td></tr><tr><td>Total HT</td><td><strong>${eurRaw(tt.ht)}</strong></td></tr><tr><td>Total TTC</td><td><strong>${eurRaw(tt.ttc)}</strong></td></tr></table><div class="assist-list" style="margin-top:8px"><button class="assist-item" data-action="navTo" data-scr="devis" data-devis="${dv.id}"><div class="ai-name">Ouvrir le devis</div><span class="ai-go">→</span></button></div>`);
+    }
+  }
+  // Rédaction
+  if(/compte[- ]?rendu|redige|rédige|prepare|prépare|mail|courrier|synthese|synthèse|rapport|doe|ppsps/.test(t)){
+    const g=[];
+    if(getActive()){g.push({t:'Générer le compte-rendu de chantier (PDF)',s:getActive().d.ident.nom||'',scr:'cr'});
+      g.push({t:'Générer la synthèse chantier (PDF)',s:'client / MOE',scr:'dashboard'});}
+    g.push({t:"Générer un rapport hebdomadaire (PDF)",s:'depuis le journal',scr:'journal'});
+    return wrap('Rédaction assistée',li(g,'Sélectionnez un chantier actif pour générer ses documents.'),'La génération s\'appuie sur les données déjà saisies (journal, planning, réserves…).');
+  }
+  // Technique (s'appuie sur la base documentaire + cadences)
+  if(/dtu|complexe|pente|cadence|risque|support|etancheite|étanchéité|bardage|couverture|reglement|réglement|norme|cctp|cctg/.test(t)){
+    const docs=kbSearch(raw);const rex=rexSearch(raw);
+    const bib=getBib().map((it,k)=>({it,k})).filter(({it})=>deacc(`${it.l} ${it.d} ${it.s}`).includes(deacc(raw).split(/\s+/).filter(w=>w.length>3)[0]||'###')).slice(0,6);
+    let body='';
+    if(docs.length)body+=`<div class="assist-sub">📚 Documents techniques</div>${li(docs.map(dc=>({t:dc.name,s:dc.categorie+(dc.tags?' · '+dc.tags:''),scr:'assistant'})),'')}`;
+    if(rex.length)body+=`<div class="assist-sub">🧠 Mémoire métier</div>${li(rex.map(r=>({t:r.chantier||'Retour d\'expérience',s:(r.difficultes||r.solutions||'').slice(0,80),scr:'assistant'})),'')}`;
+    if(bib.length)body+=`<div class="assist-sub">📐 Cadences de la bibliothèque</div><div class="assist-list">${bib.map(({it})=>`<div class="assist-item" style="cursor:default"><div><div class="ai-name">${esc(it.d)}</div><div class="ai-sub">${esc(it.l)} · ${esc(it.u)}${it.t>0?' · '+num2(it.t)+' h/'+esc(it.u):''}</div></div></div>`).join('')}</div>`;
+    if(!body)body=`<div class="note">Aucune réponse dans votre base. Ajoutez vos DTU, avis techniques, CCTP et fiches dans la Bibliothèque technique : l'assistant s'appuiera dessus.</div>`;
+    return wrap('Réponse technique',body,'Réponses basées sur VOTRE base documentaire et vos cadences (aucune invention).');
+  }
+  // Fallback : recherche universelle
+  const kb=kbSearch(raw),rex=rexSearch(raw);
+  const gs=globalSearchResults(raw).map(r=>({t:r.name,s:r.cat+(r.sub?' · '+r.sub:''),ch:r.go.ch,scr:r.go.screen,devis:r.go.devis}));
+  let body='';
+  if(gs.length)body+=li(gs.slice(0,12),'');
+  if(kb.length)body+=`<div class="assist-sub">📚 Documents</div>${li(kb.map(dc=>({t:dc.name,s:dc.categorie,scr:'assistant'})),'')}`;
+  if(rex.length)body+=`<div class="assist-sub">🧠 Mémoire métier</div>${li(rex.map(r=>({t:r.chantier||'REX',s:(r.difficultes||'').slice(0,80),scr:'assistant'})),'')}`;
+  if(!body)body=`<div class="note">Aucun résultat. Essayez : « prochain chantier », « points bloquants de … », « matériaux à commander », « retrouve la photo … ».</div>`;
+  return wrap('Résultats',body);
+}
+function todayGroup(icon,label,items,color){
+  if(!items.length)return'';
+  return`<div class="today-group">
+    <div class="today-h">${svgIcon(icon,13)} ${label} <span class="today-n" style="background:${color||'var(--acc)'}">${items.length}</span></div>
+    <div class="assist-list">${items.slice(0,6).map(x=>`<button class="assist-item" data-action="navTo" ${x.ch?`data-ch="${x.ch}"`:''} data-scr="${x.scr||'home'}" ${x.devis?`data-devis="${x.devis}"`:''}><div><div class="ai-name">${x.t}</div>${x.s?`<div class="ai-sub">${x.s}</div>`:''}</div><span class="ai-go">→</span></button>`).join('')}${items.length>6?`<div class="note" style="padding:4px 10px">+ ${items.length-6} autre(s)</div>`:''}</div>
+  </div>`;
+}
+function renderTodayCard(){
+  const td=computeToday();
+  const total=td.urgences.length+td.devis.length+td.echeances.length+td.reserves.length+td.budget.length+td.commandes.length+td.appels.length;
+  const groups=todayGroup(ico.warn,'Urgences',td.urgences,'var(--neg)')
+    +todayGroup(ico.fin,'Alertes budget',td.budget,'var(--neg)')
+    +todayGroup(ico.devis,'Devis à traiter',td.devis,'var(--warn)')
+    +todayGroup(ico.crm,'Appels / relances',td.appels,'var(--acc)')
+    +todayGroup(ico.fourn,'Commandes à passer',td.commandes,'var(--warn)')
+    +todayGroup(ico.res,'Réserves à lever',td.reserves,'var(--warn)')
+    +todayGroup(ico.cal,'Échéances (7 j)',td.echeances,'var(--acc)');
+  return`<div class="card today-card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:${state.todayOpen?'10px':'0'}">
+      <div class="card-title" style="margin:0">${svgIcon(ico.spark,15)} Aujourd'hui${td.meteo?` <span class="note" style="text-transform:none;letter-spacing:0">· ${esc(td.meteo)}</span>`:''} ${total?`<span class="badge ${td.urgences.length||td.budget.length?'badge-red':'badge-orange'}" style="margin-left:6px">${total}</span>`:`<span class="badge badge-green" style="margin-left:6px">tout est à jour ✓</span>`}</div>
+      <button class="btn btn-ghost btn-sm" data-action="toggleToday">${state.todayOpen?'Masquer':'Afficher'}</button>
+    </div>
+    ${state.todayOpen?(groups||`<div class="note">Rien d'urgent aujourd'hui. Bonne journée ! ✓</div>`):''}
+  </div>`;
+}
+function renderAssistant(){
+  const tab=state.assistTab||'today';
+  const tabBtn=(id,label,icon)=>`<button class="assist-tab${tab===id?' active':''}" data-action="assistTab" data-tab="${id}">${svgIcon(icon,14)} ${label}</button>`;
+  let body='';
+  if(tab==='today'){body=renderTodayCard();}
+  else if(tab==='ask'){
+    const sugg=['Quel est le prochain chantier prévu ?','Quels matériaux faut-il commander ?','Quels sont les points bloquants ?','Quels devis dois-je envoyer ?','Retrouve la photo de l\'acrotère fissuré','Prépare un compte-rendu'];
+    body=`
+      <div class="card" style="margin-bottom:14px">
+        <div style="position:relative">
+          ${svgIcon(ico.spark,16,'style="position:absolute;left:12px;top:13px;color:var(--acc)"')}
+          <input class="form-input" id="assist-input" type="text" value="${esc(state.assistQuery||'')}" placeholder="Posez votre question… (ex : où en est la marge de …)" style="padding-left:38px" onkeydown="if(event.key==='Enter'){event.preventDefault();document.querySelector('[data-action=assistAsk]').click();}">
+        </div>
+        <div class="assist-sugg">${sugg.map(s=>`<button class="assist-chip" data-action="assistSuggest" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="assistAsk">${svgIcon(ico.spark,13)} Demander</button></div>
+      </div>
+      ${state.assistAnswer?`<div class="card"><div class="card-title">${esc(state.assistAnswer.title)}</div>${state.assistAnswer.html}</div>`:`<div class="note">L'assistant répond à partir de vos chantiers, devis, photos, documents, clients, fournisseurs, cadences et retours d'expérience — 100% en local.</div>`}
+    `;
+  }
+  else if(tab==='kb'){
+    const q=deacc(state.kbQuery||'');const cat=state.kbCat||'all';
+    let docs=state.kbData.docs.filter(dc=>(cat==='all'||dc.categorie===cat)&&(!q||deacc([dc.name,dc.categorie,dc.tags,dc.note,dc.texte].join(' ')).includes(q)));
+    body=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="note" style="text-transform:none;letter-spacing:0;margin:0">DTU, avis techniques, CCTP, notices, fiches, plans, méthodes, bonnes pratiques… Indexés et interrogeables par l'assistant.</div>
+        <label class="btn btn-primary btn-sm" style="cursor:pointer">${svgIcon(ico.plus,13)} Ajouter un document<input type="file" data-kb-new multiple style="display:none"></label>
+      </div>
+      <div style="position:relative;margin-bottom:8px">${svgIcon(ico.search,15,'style="position:absolute;left:10px;top:11px;color:var(--sub)"')}
+        <input class="form-input" type="text" id="kb-search" placeholder="Rechercher dans la bibliothèque technique…" value="${esc(state.kbQuery||'')}" style="padding-left:32px"></div>
+      <div class="kb-cats">${['all'].concat(KB_CATS).map(c=>`<button class="assist-chip${cat===c?' active':''}" data-action="kbCat" data-cat="${esc(c)}">${c==='all'?'Tout':esc(c)}${c!=='all'?` (${state.kbData.docs.filter(x=>x.categorie===c).length})`:''}</button>`).join('')}</div>
+      ${docs.length?docs.map(dc=>{const i=state.kbData.docs.indexOf(dc);return`
+        <div class="doc-row" style="padding:10px;margin-bottom:6px;align-items:flex-start">
+          <div class="doc-ico">${svgIcon(ico.folder,16)}</div>
+          <div class="doc-info" style="flex:1">
+            <div class="doc-name">${dc.src?`<a href="${dc.src}" download="${esc(dc.name)}" style="color:inherit;text-decoration:none">${esc(dc.name)}</a>`:esc(dc.name)}</div>
+            <div class="doc-meta">${fmtDateFR(dc.date)}${dc.size?' · '+Math.round(dc.size/1024)+' Ko':''}${dc.src?'':' · non stocké (trop volumineux)'}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+              <select class="form-select" name="kb.docs.${i}.categorie">${KB_CATS.map(v=>`<option${dc.categorie===v?' selected':''}>${v}</option>`).join('')}</select>
+              <input class="form-input" type="text" name="kb.docs.${i}.tags" value="${esc(dc.tags||'')}" placeholder="Mots-clés (ex : DTU 43.1, terrasse)">
+              <input class="form-input" type="text" name="kb.docs.${i}.note" value="${esc(dc.note||'')}" placeholder="Note / résumé" style="grid-column:1/-1">
+            </div>
+          </div>
+          <button class="btn btn-danger btn-icon btn-sm" data-action="delKbDoc" data-id="${dc.id}">${svgIcon(ico.trash,13)}</button>
+        </div>`;}).join(''):`<div class="ck-card" style="text-align:center;color:var(--sub);padding:24px">Aucun document. Ajoutez vos DTU, avis techniques, CCTP, notices fabricants…<br><span class="note">Astuce : renseignez des mots-clés pour que l'assistant retrouve et cite le bon document.</span></div>`}
+    `;
+  }
+  else if(tab==='rex'){
+    const list=state.rexData.list;
+    body=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="note" style="text-transform:none;letter-spacing:0;margin:0">À chaque fin de chantier, capitalisez : difficultés, solutions, erreurs, bons fournisseurs, matériaux, durée et rendement réels. L'assistant vous ressort ces retours quand un cas similaire revient.</div>
+        <button class="btn btn-primary btn-sm" data-action="addRex">${svgIcon(ico.plus,13)} Nouveau retour</button>
+      </div>
+      ${list.length?list.map(r=>{const i=list.indexOf(r);return`
+        <div class="card" style="margin-bottom:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <input class="form-input" type="text" name="rex.list.${i}.chantier" value="${esc(r.chantier||'')}" placeholder="Chantier / affaire" style="font-weight:700;border:none;background:transparent;flex:1">
+            <input class="form-input" type="date" name="rex.list.${i}.date" value="${r.date||''}" style="width:auto">
+            <button class="btn btn-danger btn-icon btn-sm" data-action="delRex" data-id="${r.id}">${svgIcon(ico.trash,13)}</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-field"><label class="form-label">Difficultés rencontrées</label><textarea class="form-textarea" name="rex.list.${i}.difficultes" rows="2">${esc(r.difficultes||'')}</textarea></div>
+            <div class="form-field"><label class="form-label">Solutions trouvées</label><textarea class="form-textarea" name="rex.list.${i}.solutions" rows="2">${esc(r.solutions||'')}</textarea></div>
+            <div class="form-field"><label class="form-label">Erreurs à éviter</label><textarea class="form-textarea" name="rex.list.${i}.erreurs" rows="2">${esc(r.erreurs||'')}</textarea></div>
+            <div class="form-field"><label class="form-label">Fournisseurs / matériaux performants</label><textarea class="form-textarea" name="rex.list.${i}.materiaux" rows="2">${esc(r.materiaux||'')}</textarea></div>
+            <div class="form-field"><label class="form-label">Durée réelle</label><input class="form-input" type="text" name="rex.list.${i}.dureeReelle" value="${esc(r.dureeReelle||'')}" placeholder="ex : 12 j"></div>
+            <div class="form-field"><label class="form-label">Rendement réel constaté</label><input class="form-input" type="text" name="rex.list.${i}.rendement" value="${esc(r.rendement||'')}" placeholder="ex : 35 m²/j"></div>
+          </div>
+        </div>`;}).join(''):`<div class="ck-card" style="text-align:center;color:var(--sub);padding:24px">Aucun retour d'expérience enregistré.<br><span class="note">Chaque retour devient une mémoire consultable automatiquement par l'assistant.</span></div>`}
+    `;
+  }
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <div><h1 class="page-title" style="margin:0">${svgIcon(ico.spark,18)} Assistant IA</h1>
+      <div style="font-size:12px;color:var(--sub)">Votre second cerveau — 100% local, aucune donnée ne sort de l'appareil</div></div>
+    </div>
+    <div class="assist-tabs">
+      ${tabBtn('today','Aujourd\'hui',ico.cal)}
+      ${tabBtn('ask','Demander',ico.spark)}
+      ${tabBtn('kb','Bibliothèque technique',ico.folder)}
+      ${tabBtn('rex','Mémoire métier',ico.brief)}
+    </div>
+    ${body}
+  `;
+}
+
 // ─── Home / Cockpit chantier ──────────────────────────────────────────────────
 function renderHome(d,c){
   const s=summarize(d);
@@ -4743,6 +5072,7 @@ function renderHome(d,c){
       </div>
     </div>
 
+    ${renderTodayCard()}
     ${renderKpiTile()}
 
     <div class="cockpit-grid">
