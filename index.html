@@ -1506,6 +1506,26 @@ function summarize(d){
     budgetCR,reelEngage,alertCount,retards};
 }
 
+// Calcul d'une ligne RAF — logique partagée entre le tableau et les agrégats financiers.
+// Distingue « non estimé » (RAD vide → EAC prudent = budget validé) et « soldé » (RAD = 0 → EAC = réel).
+function rafRowCalc(d,row,marcheActualise){
+  const rl=(d.raf&&d.raf.lines&&d.raf.lines[row.id])||{};
+  const bi=n(rl.bi);
+  const bvRaw=n(rl.bv);
+  const bv=bvRaw>0?bvRaw:bi;                       // budget validé (défaut = budget initial)
+  const reel=row.manual?n(rl.reel):n(row.reel);
+  const eng=row.manual?n(rl.eng):n(row.eng);
+  const radStr=rl.rad;
+  const radSet=radStr!==''&&radStr!=null&&!isNaN(parseFloat(radStr));
+  const rad=radSet?Math.max(0,n(radStr)):null;
+  // Coût à terminaison : réel + reste estimé ; si non estimé → prudence = budget validé
+  const eac=radSet?(reel+rad):(bv>0?Math.max(bv,reel):reel);
+  const reste=Math.max(0,eac-reel);               // ce qui reste réellement à décaisser
+  const ecart=bv>0?(bv-eac):0;                     // marge budgétaire du poste (+ = sous budget)
+  const pctCA=marcheActualise>0?eac/marcheActualise*100:0;
+  const filled=bi>0||bvRaw>0||radSet||(row.manual&&(n(rl.reel)>0||n(rl.eng)>0));
+  return{rl,bi,bv,reel,eng,radSet,rad,eac,reste,ecart,pctCA,filled};
+}
 function computeAll(d){
   const today=new Date();
 
@@ -1568,12 +1588,9 @@ function computeAll(d){
   const avenantsSomme=d.avenants.reduce((s,a)=>s+n(a.montant),0);
   const avenantsSignes=n(d.finance.avenantsSignes)||avenantsSomme;
   const marcheActualise=marcheInitial+avenantsSignes;
-  const budgetCR=n(d.finance.budgetCR)||marcheInitial;
   const reelEngage=n(d.finance.reelEngage)||reelEngageAuto;
   const resteAEngager=n(d.finance.resteAEngager);
-  const eac=reelEngage+(resteAEngager>0?resteAEngager:Math.max(0,budgetCR-reelEngage));
-  const margeBrute=marcheActualise-eac;
-  const tauxMarge=marcheActualise>0?margeBrute/marcheActualise*100:0;
+  // budgetCR / eac / marge : calculés plus bas, après agrégation du RAF (voir rafDefs)
 
   // Situations
   const totalFacture=d.situations.reduce((s,sit)=>s+n(sit.montantHT),0);
@@ -1604,6 +1621,22 @@ function computeAll(d){
     {id:'etudes',label:'Études techniques',src:'Saisie manuelle',manual:true},
     {id:'autres',label:'Autres dépenses',src:'Saisie manuelle',manual:true}
   ];
+
+  // ── Agrégats RAF (bottom-up) ─────────────────────────────────────────────────
+  // Quand le RAF est renseigné, il PILOTE l'EAC et la marge (au lieu du champ global
+  // « reste à engager »), pour que tableau RAF et paramètres financiers concordent.
+  let rafReelTot=0,rafBvTot=0,rafBiTot=0,rafEacTot=0,rafResteTot=0,rafFilled=false;
+  rafDefs.forEach(row=>{
+    const r=rafRowCalc(d,row,marcheActualise);
+    rafReelTot+=r.reel;rafBvTot+=r.bv;rafBiTot+=r.bi;rafEacTot+=r.eac;rafResteTot+=r.reste;
+    if(r.filled)rafFilled=true;
+  });
+  const budgetCR=n(d.finance.budgetCR)||(rafFilled&&rafBvTot>0?rafBvTot:0)||marcheInitial;
+  let resteADepenser,eac;
+  if(rafFilled){eac=rafEacTot;resteADepenser=Math.max(0,eac-reelEngage);}
+  else{resteADepenser=resteAEngager>0?resteAEngager:Math.max(0,budgetCR-reelEngage);eac=reelEngage+resteADepenser;}
+  const margeBrute=marcheActualise-eac;
+  const tauxMarge=marcheActualise>0?margeBrute/marcheActualise*100:0;
 
   const MOIS_FR=['Janv','Févr','Mars','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
   let rafCnt=4;
@@ -1664,7 +1697,7 @@ function computeAll(d){
     stTotal,stSitTotal,stActifs,stDC4,
     fTotal,fournActifs,
     posteTasks,depenseMO,depenseST,depenseFourn,reelEngageAuto,
-    rafDefs,rafMonths,rafCnt,
+    rafDefs,rafMonths,rafCnt,resteADepenser,rafReelTot,rafBvTot,rafBiTot,rafEacTot,rafResteTot,rafFilled,
     resTotal,resOuvertes,resLevees,
     clDDone,clRDone,
     tsEnAttente,tsEstime,tsAccorde,
@@ -3044,23 +3077,19 @@ function renderFinance(d,c){
   // ── RAF table ───────────────────────────────────────────────────────────────
   let rafTotBI=0,rafTotBV=0,rafTotReel=0,rafTotRAD=0,rafTotEAC=0;
   const rafRows=c.rafDefs.map(row=>{
-    const rl=d.raf.lines[row.id]||{};
-    const bi=n(rl.bi);const bv=n(rl.bv);
-    const rad=n(rl.rad);
-    const reel=row.manual?n(rl.reel):row.reel;
-    const eng=row.manual?n(rl.eng):row.eng;
-    const eac=reel+rad;
-    const pctCA=c.marcheActualise>0?eac/c.marcheActualise*100:0;
-    const monthVal=c.rafCnt>0?rad/c.rafCnt:0;
-    const ecartRAF=bv>0?bv-eac:0;
-    rafTotBI+=bi;rafTotBV+=bv;rafTotReel+=reel;rafTotRAD+=rad;rafTotEAC+=eac;
+    const r=rafRowCalc(d,row,c.marcheActualise);
+    const {rl,bi,bv,reel,eng,radSet,eac,reste,ecart:ecartRAF,pctCA}=r;
+    const monthVal=c.rafCnt>0?reste/c.rafCnt:0;
+    rafTotBI+=bi;rafTotBV+=bv;rafTotReel+=reel;rafTotRAD+=reste;rafTotEAC+=eac;
+    // état de la ligne : soldé (RAD=0), estimé (RAD saisi>0) ou prévisionnel (défaut budget)
+    const etat=radSet?(reste<=0?'<span class="badge badge-green" style="font-size:9px">soldé</span>':'<span class="badge badge-blue" style="font-size:9px">estimé</span>'):(bv>0?'<span class="badge badge-orange" style="font-size:9px">prévu</span>':'');
     return`<tr>
-      <td class="sticky" style="font-weight:500">${esc(row.label)}</td>
+      <td class="sticky" style="font-weight:500">${esc(row.label)} ${etat}</td>
       <td style="font-size:11px;color:var(--sub);white-space:nowrap">${esc(row.src)}</td>
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:80px"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?n(bi):''}"></div></td>
       <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad||''}" style="width:80px"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div></td>
       <td class="auto" style="font-weight:600">${eac>0?eurRaw(eac):'—'}</td>
       <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
       <td class="auto">${pctCA>0?pctCA.toFixed(1)+'%':'—'}</td>
@@ -3073,13 +3102,15 @@ function renderFinance(d,c){
 
   const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
   const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
+  const rafMargeTerm=c.marcheActualise-rafTotEAC;           // marge à terminaison (bottom-up)
+  const rafMargeTermPct=c.marcheActualise>0?rafMargeTerm/c.marcheActualise*100:0;
 
   // ── Indicateurs de marge (sémantique BTP) ──────────────────────────────────
   const recettes=c.marcheActualise;                 // CA prévu (marché actualisé)
   const coutObjectif=c.budgetCR;                     // budget de revient objectif
   const engage=c.reelEngage;                          // dépensé / engagé à date
-  const rad=c.resteAEngager>0?c.resteAEngager:Math.max(0,coutObjectif-engage); // reste à dépenser
-  const eacF=engage+rad;                              // coût final prévu (EAC)
+  const rad=c.resteADepenser;                         // reste à dépenser (RAF si renseigné, sinon param global)
+  const eacF=c.eac;                                   // coût final prévu (EAC) — unifié avec le RAF
   const margeObj=recettes-coutObjectif;
   const tauxObj=recettes>0?margeObj/recettes*100:0;
   const margePrev=recettes-eacF;
@@ -3234,6 +3265,9 @@ function renderFinance(d,c){
     <!-- RAF (analyse détaillée SAP) -->
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Analyse RAF (reste à faire) — par nature de coût</div>
+      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px;background:#f0f6ff;border:1px solid #d3e3fb;color:#264a80;padding:9px 11px;border-radius:8px">
+        Remplissez, par poste : <b>Budget validé</b> et <b>Reste à dépenser</b>. La colonne <b>Reste à dép.</b> pilote le résultat : <b>vide</b> = non estimé (EAC prudent = budget), une <b>valeur</b> = réel + reste, <b>0</b> = poste soldé (EAC = réel). Dès qu'une ligne est renseignée, le RAF <b>alimente l'EAC et la marge</b> ci-dessus (les KPI se recalculent).
+      </div>
       <div class="param-row" style="margin-bottom:10px">
         <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
@@ -3264,6 +3298,12 @@ function renderFinance(d,c){
             <td colspan="${2+c.rafMonths.length}"></td>
           </tr></tfoot>
         </table>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px">
+        <div class="ck-card"><div class="ck-head">Coût à terminaison (EAC)</div><div class="ck-val" style="font-size:18px">${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</div><div style="font-size:11px;color:var(--sub)">Réel ${eurRaw(rafTotReel)} + reste ${eurRaw(rafTotRAD)}</div></div>
+        <div class="ck-card"><div class="ck-head">Marge à terminaison</div><div class="ck-val" style="font-size:18px;color:${rafMargeTerm<0?'var(--neg)':'var(--pos)'}">${c.marcheActualise>0?eurRaw(rafMargeTerm):'—'}</div><div style="font-size:11px;color:var(--sub)">${c.marcheActualise>0?pct(rafMargeTermPct)+' du marché':''}</div></div>
+        <div class="ck-card"><div class="ck-head">Écart budget (BV − EAC)</div><div class="ck-val" style="font-size:18px;color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?eurRaw(rafTotEcart):'—'}</div><div style="font-size:11px;color:var(--sub)">${rafTotEcart<0?'dépassement de budget':rafTotBV>0?'sous le budget validé':''}</div></div>
+        <div class="ck-card"><div class="ck-head">Statut RAF</div><div class="ck-val" style="font-size:15px;color:${c.rafFilled?'var(--pos)':'var(--sub)'}">${c.rafFilled?'✓ pilote les KPI':'Non renseigné'}</div><div style="font-size:11px;color:var(--sub)">${c.rafFilled?'EAC & marge = RAF':'KPI = budget/réel auto'}</div></div>
       </div>
     </div>
   `;
