@@ -766,7 +766,8 @@ let state={screen:'hub',chantiers:[],activeId:null,pfQuery:'',pfStatut:'all',hWe
   bpuData:{list:[]},bpuId:null,bpuQuickOpen:false,
   kpiData:{aoRecus:'',aoDeposes:'',satisfaction:'',periode:''},kpiOpen:true,
   kbData:{docs:[]},rexData:{list:[]},
-  factData:{list:[],avoirs:[]},factId:null,factTab:'all',factQuery:'',factDevisId:null,avoirId:null,
+  factData:{list:[],avoirs:[],config:{margeObjectif:'42',tauxDebourse:'58'}},factId:null,factTab:'all',factQuery:'',factDevisId:null,avoirId:null,
+  finMonth:new Date().toISOString().slice(0,7),
   aiConfig:{enabled:false,provider:'anthropic',key:'',model:'claude-opus-4-8',geminiKey:'',geminiModel:'gemini-2.0-flash'},aiBusy:false,
   redacType:'cr',redacContext:'',redacResult:'',redacBusy:false,
   assistTab:'today',assistQuery:'',assistAnswer:null,kbQuery:'',kbCat:'all',todayOpen:true,
@@ -809,7 +810,7 @@ function load(){
   try{const kb=JSON.parse(localStorage.getItem(KB_KEY)||'null');if(kb&&Array.isArray(kb.docs))state.kbData=kb;}catch(e){}
   try{const rx=JSON.parse(localStorage.getItem(REX_KEY)||'null');if(rx&&Array.isArray(rx.list))state.rexData=rx;}catch(e){}
   try{const ai=JSON.parse(localStorage.getItem(AI_KEY)||'null');if(ai&&typeof ai==='object')state.aiConfig=Object.assign(state.aiConfig,ai);}catch(e){}
-  try{const fa=JSON.parse(localStorage.getItem(FACT_KEY)||'null');if(fa&&Array.isArray(fa.list))state.factData={list:fa.list,avoirs:Array.isArray(fa.avoirs)?fa.avoirs:[]};}catch(e){}
+  try{const fa=JSON.parse(localStorage.getItem(FACT_KEY)||'null');if(fa&&Array.isArray(fa.list))state.factData={list:fa.list,avoirs:Array.isArray(fa.avoirs)?fa.avoirs:[],config:Object.assign({margeObjectif:'42',tauxDebourse:'58'},fa.config||{})};}catch(e){}
 }
 function saveAccount(){try{localStorage.setItem(ACC_KEY,JSON.stringify(state.account))}catch(e){}}
 function saveCrm(){try{localStorage.setItem(CRM_KEY,JSON.stringify(state.crmData));markSaved();}catch(e){}}
@@ -1220,7 +1221,7 @@ function importBackupData(parsed){
   if(parsed.kpi&&typeof parsed.kpi==='object'){state.kpiData=Object.assign(state.kpiData,parsed.kpi);saveKpi();}
   if(parsed.kb&&Array.isArray(parsed.kb.docs)){state.kbData=parsed.kb;saveKb();}
   if(parsed.rex&&Array.isArray(parsed.rex.list)){state.rexData=parsed.rex;saveRex();}
-  if(parsed.fact&&Array.isArray(parsed.fact.list)){state.factData={list:parsed.fact.list,avoirs:Array.isArray(parsed.fact.avoirs)?parsed.fact.avoirs:[]};saveFact();}
+  if(parsed.fact&&Array.isArray(parsed.fact.list)){state.factData={list:parsed.fact.list,avoirs:Array.isArray(parsed.fact.avoirs)?parsed.fact.avoirs:[],config:Object.assign({margeObjectif:'42',tauxDebourse:'58'},parsed.fact.config||{})};saveFact();}
   save();state.accountOpen=false;state.screen='hub';render();
   alert('Sauvegarde restaurée : '+state.chantiers.length+' chantier(s).');
 }
@@ -1913,6 +1914,9 @@ document.addEventListener('click',e=>{
       factureFromDevis(id,'situation',{avancement:av});render();return;
     }
     if(action==='factCreateFinale'){factureFromDevis(id,'finale',{});render();return;}
+    // ── Gestion financière ──
+    if(action==='finPrevMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),-1);render();return;}
+    if(action==='finNextMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),1);render();return;}
     // ── Avoirs ──
     if(action==='addAvoir'){newAvoir('');state.avoirId=state.factData.avoirs[0].id;state.screen='avoirs';render();return;}
     if(action==='avoirFromFacture'){const av=newAvoir(id);state.factId=null;state.avoirId=av.id;state.screen='avoirs';render();toast('Avoir '+av.num+' créé.');return;}
@@ -3827,10 +3831,14 @@ function renderHub(){
         ${card('bpu',ico.list,'#6c4bb6','#efe9fb','Bordereaux BPU',
           'Vos bordereaux de prix unitaires par client, réutilisables en un clic pour générer un devis.',
           nbBpu?nbBpu+' BPU'+(nbBpu>1?'s':''):'Créer un BPU')}
-        ${(()=>{const nf=state.factData.list.length;const caR=state.factData.list.filter(f=>f.statut==='Réglée').reduce((s,f)=>s+factureTotals(f).ttc,0);const att=state.factData.list.filter(f=>f.statut==='Finalisée').length;
+        ${(()=>{const nf=state.factData.list.length;const att=state.factData.list.filter(f=>f.statut==='Finalisée').length;
           return card('factures',ico.receipt,'#107e3e','#e8f5e9','Factures',
           'Facturez vos devis acceptés : acompte, situations, solde final. Suivi des règlements, échéances et avoirs.',
           nf?nf+' facture'+(nf>1?'s':'')+(att?' · '+att+' à encaisser':''):'Créer une facture');})()}
+        ${(()=>{const g=computeGestion(new Date().toISOString().slice(0,7));
+          return card('gestion',ico.fin,'#0a7c8a','#e0f7fa','Gestion financière',
+          'Votre trésorerie et votre marge du mois en un coup d\'œil : encaissé, à encaisser, déboursé, marge vs objectif 42%, carnet de commandes.',
+          g.facHT>0?'Marge '+pct(g.margePct)+' · facturé '+eurRaw(g.facHT):'Piloter ma marge');})()}
         ${card('assistant',ico.spark,'#0a7c8a','#e0f7fa','Assistant IA',
           'Votre second cerveau : « Aujourd\'hui », questions en langage naturel, bibliothèque technique et mémoire métier. 100% local.',
           'Ouvrir l\'assistant')}
@@ -4272,6 +4280,128 @@ function factureTotals(f){
   (f.lignes||[]).forEach(l=>{const base=n(l.qte)*n(l.pu);ht+=base;tva+=base*n(l.tva)/100;});
   return{ht,tva,ttc:ht+tva};
 }
+// Déboursé sec d'une facture : coût saisi, sinon estimé au taux de déboursé par défaut
+function factureDebourse(f){
+  if(f.debourse!==''&&f.debourse!=null)return n(f.debourse);
+  const tx=n((state.factData.config||{}).tauxDebourse)||58;
+  return factureTotals(f).ht*tx/100;
+}
+function fmtMonthFR(mk){
+  if(!mk)return'';const[y,m]=mk.split('-');
+  const noms=['','janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  return(noms[parseInt(m)]||'')+' '+y;
+}
+function shiftMonth(mk,delta){
+  const[y,m]=mk.split('-').map(Number);const d=new Date(y,m-1+delta,1);return d.toISOString().slice(0,7);
+}
+// Cockpit trésorerie / marge du mois
+function computeGestion(mk){
+  const cfg=state.factData.config||{};
+  const objectif=n(cfg.margeObjectif)||42;
+  const facts=state.factData.list.filter(f=>f.statut!=='Annulée');
+  const monthFacts=facts.filter(f=>(f.date||'').slice(0,7)===mk);
+  const facHT=monthFacts.reduce((s,f)=>s+factureTotals(f).ht,0);
+  const facTTC=monthFacts.reduce((s,f)=>s+factureTotals(f).ttc,0);
+  const debMois=monthFacts.reduce((s,f)=>s+factureDebourse(f),0);
+  const marge=facHT-debMois;
+  const margePct=facHT>0?marge/facHT*100:0;
+  // Trésorerie (toutes périodes, argent réel)
+  const encaisseMois=facts.filter(f=>f.statut==='Réglée'&&(f.reglementDate||'').slice(0,7)===mk).reduce((s,f)=>s+factureTotals(f).ttc,0);
+  const today=todayISO();
+  const outstanding=facts.filter(f=>f.statut==='Finalisée');
+  const aEncaisser=outstanding.reduce((s,f)=>s+factureTotals(f).ttc,0);
+  const enRetard=outstanding.filter(f=>f.echeance&&f.echeance<today);
+  const retardMt=enRetard.reduce((s,f)=>s+factureTotals(f).ttc,0);
+  // Carnet de commandes : devis acceptés, reste à facturer
+  let carnet=0;
+  state.devisData.list.filter(dv=>dv.statut==='Accepté').forEach(dv=>{
+    const t=devisTotals(dv).ht;const b=billedForDevis(dv.id).ht;carnet+=Math.max(0,t-b);
+  });
+  // CA à facturer pour tenir l'objectif compte tenu du déboursé engagé ce mois
+  const caCible=objectif<100?debMois/(1-objectif/100):0;
+  const aFacturerPourObjectif=Math.max(0,caCible-facHT);
+  // Mouvements (relevé) du mois
+  const mouvements=monthFacts.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return{objectif,facHT,facTTC,debMois,marge,margePct,encaisseMois,aEncaisser,enRetard:enRetard.length,retardMt,carnet,caCible,aFacturerPourObjectif,mouvements,nbFactures:monthFacts.length};
+}
+
+function renderGestion(){
+  const mk=state.finMonth||new Date().toISOString().slice(0,7);
+  const g=computeGestion(mk);
+  const cfg=state.factData.config||{};
+  const okMarge=g.margePct>=g.objectif;
+  const gaugePct=Math.max(0,Math.min(100,g.objectif>0?g.margePct/g.objectif*100:0));
+  const stat=(label,val,color,sub)=>`<div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-value" style="font-size:18px;color:${color||'var(--text)'}">${val}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}</div>`;
+  const mvt=g.mouvements.map(f=>{const t=factureTotals(f);const regle=f.statut==='Réglée';return`
+    <div class="doc-row" style="padding:9px 10px;margin-bottom:5px;cursor:pointer" data-action="openFacture" data-id="${f.id}">
+      <div class="doc-ico" style="background:${regle?'#e8f5e9':'#e8f1fd'};color:${regle?'var(--pos)':'var(--acc)'}">${svgIcon(regle?ico.checkmark:ico.receipt,15)}</div>
+      <div class="doc-info"><div class="doc-name" style="font-size:13px">${esc(f.num)} · ${esc(f.client||'—')}</div>
+      <div class="doc-meta">${factTypeLabel(f.type)} · ${fmtDateFR(f.date)} · <span class="badge ${factStatutBadge(f.statut)}" style="font-size:10px">${esc(f.statut)}</span></div></div>
+      <div style="text-align:right;white-space:nowrap"><strong style="color:${regle?'var(--pos)':'var(--text)'}">${regle?'+':''}${eurRaw(t.ttc)}</strong>
+      <div class="doc-meta">marge ${eurRaw(factureTotals(f).ht-factureDebourse(f))}</div></div>
+    </div>`;}).join('');
+  return`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+      <h1 class="page-title" style="margin:0">${svgIcon(ico.euro,18)} Gestion financière</h1>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-ghost btn-icon btn-sm" data-action="finPrevMonth">‹</button>
+        <strong style="min-width:130px;text-align:center;text-transform:capitalize">${fmtMonthFR(mk)}</strong>
+        <button class="btn btn-ghost btn-icon btn-sm" data-action="finNextMonth">›</button>
+      </div>
+    </div>
+
+    <!-- Compte : trésorerie -->
+    <div class="card" style="margin-bottom:14px;background:linear-gradient(135deg,var(--acc),#3a5bd0);color:#fff">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px">
+        <div>
+          <div style="font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">Encaissé en ${fmtMonthFR(mk)}</div>
+          <div style="font-size:30px;font-weight:800;line-height:1.1">${eurRaw(g.encaisseMois)}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;opacity:.85">À encaisser (émises non réglées)</div>
+          <div style="font-size:20px;font-weight:700">${eurRaw(g.aEncaisser)}</div>
+          ${g.enRetard?`<div style="font-size:12px;margin-top:2px;color:#ffd7d7">⚠ ${g.enRetard} en retard · ${eurRaw(g.retardMt)}</div>`:''}
+        </div>
+      </div>
+    </div>
+
+    <!-- Objectif de marge 42% -->
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">Objectif de marge du mois</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px">Cible <input type="number" name="fact.config.margeObjectif" value="${esc(cfg.margeObjectif||'42')}" style="width:54px;padding:4px 6px;border:1px solid var(--border);border-radius:6px"> %</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:28px;font-weight:800;color:${okMarge?'var(--pos)':'var(--warn)'}">${pct(g.margePct)}</span>
+        <span class="note" style="margin:0">réalisée · objectif ${g.objectif} %</span>
+      </div>
+      <div class="prog-bar" style="height:10px"><div class="prog-fill" style="width:${gaugePct}%;background:${okMarge?'var(--pos)':'var(--warn)'}"></div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
+        ${stat('Facturé HT',eurRaw(g.facHT),'var(--acc)',g.nbFactures+' facture'+(g.nbFactures>1?'s':''))}
+        ${stat('Déboursé sec',eurRaw(g.debMois),'var(--warn)','coûts fournitures + MO')}
+        ${stat('Marge dégagée',eurRaw(g.marge),okMarge?'var(--pos)':'var(--text)','sur le mois')}
+      </div>
+      ${g.aFacturerPourObjectif>1?`<div class="note" style="margin-top:12px;text-transform:none;letter-spacing:0;background:#fff8ec;border:1px solid #ffe0b2;color:#8a5a00;padding:10px;border-radius:8px">
+        💡 Avec ${eurRaw(g.debMois)} de déboursé engagé, il faut facturer au moins <strong>${eurRaw(g.caCible)} HT</strong> pour sortir à ${g.objectif} %. Il reste <strong>${eurRaw(g.aFacturerPourObjectif)} HT</strong> à mettre en facturation ce mois-ci.
+      </div>`:g.facHT>0?`<div class="note" style="margin-top:12px;text-transform:none;letter-spacing:0;background:#eafaf0;border:1px solid #b6e6c8;color:var(--pos);padding:10px;border-radius:8px">✅ Objectif de ${g.objectif} % atteint pour ${fmtMonthFR(mk)}. Marge dégagée : ${eurRaw(g.marge)}.</div>`:''}
+    </div>
+
+    <!-- Carnet de commandes + config -->
+    <div class="kpi-strip" style="grid-template-columns:repeat(2,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Carnet de commandes (reste à facturer)</div><div class="kpi-value" style="font-size:18px;color:var(--acc)">${eurRaw(g.carnet)}</div><div class="kpi-sub">devis acceptés non encore facturés</div></div>
+      <div class="kpi-card"><div class="kpi-label">Taux de déboursé par défaut</div><div class="kpi-value" style="font-size:18px"><input type="number" name="fact.config.tauxDebourse" value="${esc(cfg.tauxDebourse||'58')}" style="width:64px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;font-size:18px;font-weight:700"> %</div><div class="kpi-sub">utilisé quand le déboursé d'une facture n'est pas saisi</div></div>
+    </div>
+
+    <!-- Relevé du mois -->
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="card-title" style="margin:0">Relevé de facturation — ${fmtMonthFR(mk)}</div>
+        <button class="btn btn-primary btn-sm" data-screen="factures">${svgIcon(ico.receipt,13)} Toutes les factures</button>
+      </div>
+      ${mvt||`<div class="note" style="text-align:center;padding:16px">Aucune facture en ${fmtMonthFR(mk)}. Facturez un devis accepté depuis l'écran Factures.</div>`}
+    </div>
+  `;
+}
 // Numérotation F + année + séquence (toutes factures confondues)
 function factNum(){
   const yr=new Date().getFullYear();
@@ -4297,7 +4427,7 @@ function newFacture(prefill){
   const f={id:'fa'+Date.now()+Math.random().toString(36).slice(2,5),num:factNum(),
     type:prefill.type||'directe',devisId:prefill.devisId||'',client:prefill.client||'',contactId:prefill.contactId||'',
     chantier:prefill.chantier||'',date:todayISO(),echeance:echeanceISO(30),statut:'Brouillon',
-    pct:prefill.pct||'',avancement:prefill.avancement||'',notes:prefill.notes||'',reglementDate:'',reglementMode:'',
+    pct:prefill.pct||'',avancement:prefill.avancement||'',debourse:prefill.debourse||'',notes:prefill.notes||'',reglementDate:'',reglementMode:'',
     lignes:prefill.lignes||Array.from({length:3},()=>({designation:'',qte:'',unite:'',pu:'',tva:'20'}))};
   state.factData.list.unshift(f);
   state.factId=f.id;
@@ -4326,8 +4456,15 @@ function factureFromDevis(devisId,type,params){
     montant=reste;
     designation=`Solde final — devis ${dv.num}`;
   }
+  // Déboursé estimé : main d'œuvre du devis (h × taux) au prorata de la part facturée + repli taux déboursé
+  const cfg=(state.factData.config)||{};
+  const txDeb=n(cfg.tauxDebourse)||58;
+  const moTot=devisHeures(dv)*37.3; // coût MO estimé du devis entier
+  const partDeb=t.ht>0?(moTot*(montant/t.ht)):0;
+  const debEstime=partDeb>0?partDeb:montant*txDeb/100;
   const f=newFacture({
     type,devisId,client:dv.client,contactId:dv.contactId,pct,avancement,
+    debourse:debEstime>0?debEstime.toFixed(2):'',
     lignes:[{designation,qte:'1',unite:'forfait',pu:montant.toFixed(2),tva}]
   });
   toast('Facture '+f.num+' créée ('+factTypeLabel(type)+').');
@@ -4475,7 +4612,10 @@ function renderFactures(){
           <div class="form-field"><label class="form-label">Échéance</label><input class="form-input" type="date" name="fact.list.${idx}.echeance" value="${f.echeance||''}"></div>
           <div class="form-field"><label class="form-label">Date de règlement</label><input class="form-input" type="date" name="fact.list.${idx}.reglementDate" value="${f.reglementDate||''}"></div>
           <div class="form-field"><label class="form-label">Mode de règlement</label><input class="form-input" type="text" name="fact.list.${idx}.reglementMode" value="${esc(f.reglementMode||'')}" placeholder="Virement, chèque…"></div>
+          <div class="form-field"><label class="form-label" title="Coût de revient (fournitures + MO + ST) pour calculer la marge">Déboursé sec HT</label><div class="amt-cell"><span class="sym">€</span><input type="number" name="fact.list.${idx}.debourse" value="${f.debourse||''}" placeholder="coût"></div></div>
+          <div class="form-field"><label class="form-label">Marge sur cette facture</label><div class="form-input" style="background:#f7f9fb;border-color:transparent">${(()=>{const c=factureDebourse(f);const m=t.ht-c;const pc=t.ht>0?m/t.ht*100:0;return c>0?`<strong style="color:${pc>=n((state.factData.config||{}).margeObjectif||42)?'var(--pos)':'var(--warn)'}">${eurRaw(m)} · ${pct(pc)}</strong>`:'<span style="color:var(--sub)">—</span>';})()}</div></div>
         </div>
+        ${f.debourse===''||f.debourse==null?`<div class="note" style="margin-top:6px">Déboursé non renseigné : marge estimée au taux par défaut (${esc((state.factData.config||{}).tauxDebourse||'58')}% de déboursé). Renseignez le coût réel pour un suivi précis.</div>`:''}
       </div>
       <div class="card" style="margin-bottom:14px">
         <div class="card-title">Lignes de facturation</div>
@@ -4776,7 +4916,7 @@ function render(){
     if(el){try{el.focus({preventScroll:true});if(car!=null&&el.setSelectionRange)el.setSelectionRange(car,car);}catch(e){}}
   }
 }
-const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',factures:'Factures',avoirs:'Avoirs',bpu:'BPU',assistant:'Assistant IA',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
+const SCREEN_TITLES={hub:'Menu',portfolio:'Chantiers',crm:'CRM',devis:'Devis',factures:'Factures',avoirs:'Avoirs',gestion:'Gestion financière',bpu:'BPU',assistant:'Assistant IA',home:'Cockpit',dashboard:'Tableau de bord',finance:'Finances',st:'Sous-traitants',fournisseurs:'Fournisseurs',planning:'Planning',heures:'Heures MO',reserves:'Réserves',checklist:'Check-list',ts:'TS & Aléas',cr:'CR Chantier',tasks:'Tâches',journal:'Journal',photos:'Photos',documents:'Documents'};
 function renderMain(){
   applyTheme();
   document.title=(SCREEN_TITLES[state.screen]?SCREEN_TITLES[state.screen]+' — ':'')+'Suivi de Chantier Pro';
@@ -4815,6 +4955,7 @@ function renderMain(){
     renderFab();return;
   }
   if(state.screen==='avoirs'){main.innerHTML=renderAvoirs();renderFab();return;}
+  if(state.screen==='gestion'){main.innerHTML=renderGestion();renderFab();return;}
   if(state.screen==='assistant'){
     main.innerHTML=renderAssistant();
     const ai=document.getElementById('assist-input');if(ai){ai.focus();ai.setSelectionRange(ai.value.length,ai.value.length);}
@@ -4972,7 +5113,7 @@ function accountPanel(){
 }
 
 // Menu latéral « applications » (niveau app, hors chantier actif)
-const APP_SCREENS=['hub','portfolio','crm','devis','factures','avoirs','bpu','assistant'];
+const APP_SCREENS=['hub','portfolio','crm','devis','factures','avoirs','gestion','bpu','assistant'];
 const APPS_NAV=[
   {screen:'hub',icon:ico.apps,label:'Menu'},
   {screen:'portfolio',icon:ico.brief,label:'Chantiers'},
@@ -4982,6 +5123,7 @@ const APPS_NAV=[
   {screen:'bpu',icon:ico.list,label:'BPU'},
   {screen:'factures',icon:ico.receipt,label:'Factures'},
   {screen:'avoirs',icon:ico.euro,label:'Avoirs'},
+  {screen:'gestion',icon:ico.fin,label:'Gestion financière'},
   {sep:true},
   {screen:'assistant',icon:ico.spark,label:'Assistant IA'},
 ];
