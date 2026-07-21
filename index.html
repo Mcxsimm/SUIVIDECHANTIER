@@ -674,7 +674,7 @@ function defaults(){
            dateOS:'',debut:'',fin:'',reception:'',avancementLot:''},
     contract:{montantHT:'',montantTTC:'',tva:'20',delaiPaiement:'30',
               revision:'non',formule:'',delaiContractuel:''},
-    finance:{marcheInitial:'',avenantsSignes:'',budgetCR:'',reelEngage:'',resteAEngager:'',fgChantier:''},
+    finance:{marcheInitial:'',avenantsSignes:'',budgetCR:'',reelEngage:'',resteAEngager:'',fgChantier:'',pointage:'ouvert',margePlancher:'',dateCloture:''},
     postes:row6(i=>({nom:'',budgetPrevu:'',reelEngage:'',resteAEng:'',avancement:'',txHoraire:'37.3',hBudg:'',hReel:'',source:'manuel'})),
     situations:Array.from({length:8},(_,i)=>({
       num:i+1,periode:'Situation '+(i+1),dateEnvoi:'',montantHT:'',datePaiement:'',delai:'30',statut:'—',visa:''
@@ -1526,6 +1526,40 @@ function rafRowCalc(d,row,marcheActualise){
   const filled=bi>0||bvRaw>0||radSet||(row.manual&&(n(rl.reel)>0||n(rl.eng)>0));
   return{rl,bi,bv,reel,eng,radSet,rad,eac,reste,ecart,pctCA,filled};
 }
+// Heures pointées sur un mois donné (grille hebdo ; semaine rattachée au mois de son jeudi)
+function hoursMonth(d,ym){
+  let h=0;
+  Object.entries(d.heuresHebdo||{}).forEach(([wk,wd])=>{
+    let key='';try{const st=weekOf(wk);const th=new Date(st);th.setDate(th.getDate()+3);key=th.toISOString().slice(0,7);}catch(e){}
+    if(key===ym)Object.values(wd).forEach(days=>{h+=Object.values(days).reduce((s,v)=>s+n(v),0);});
+  });
+  return h;
+}
+// ─── Enveloppe financière d'un chantier (pilotage du lissage de marge) ────────
+// Recettes totales (marché + avenants + suppléments TS accordés) − dépensé réel
+// = réserve. Capacité d'absorption = réserve au-delà du plancher de marge, en heures.
+function enveloppeChantier(ch){
+  const d=ch.d;
+  let recettes,depense,txH,travauxFinis,tsAcc=0;
+  if(d.type==='petite'){
+    const s=summarize(d);
+    recettes=s.marcheActualise;depense=s.reelEngage;txH=37.3;
+    travauxFinis=(d.petite&&d.petite.statut)==='Terminé';
+  }else{
+    const c=computeAll(d);
+    tsAcc=(d.ts||[]).reduce((t,x)=>t+n(x.mtAccorde),0);
+    recettes=c.marcheActualise+tsAcc;depense=c.reelEngage;txH=c.txH;
+    travauxFinis=!!(d.ident.reception)||(c.planAv||0)>=100;
+  }
+  const reserve=recettes-depense;
+  const plancher=n(d.finance&&d.finance.margePlancher)||n((state.factData.config||{}).margeObjectif)||42;
+  const margeMin=recettes*plancher/100;
+  const capEuro=Math.max(0,reserve-margeMin);
+  const capH=txH>0?capEuro/txH:0;
+  const margePct=recettes>0?reserve/recettes*100:0;
+  const ouvert=(d.finance&&d.finance.pointage)!=='cloture';
+  return{recettes,depense,reserve,margePct,plancher,margeMin,capEuro,capH,txH,tsAcc,travauxFinis,ouvert,reserveActive:travauxFinis&&ouvert,sousPlancher:recettes>0&&margePct<plancher};
+}
 function computeAll(d){
   const today=new Date();
 
@@ -1713,6 +1747,8 @@ document.addEventListener('change',e=>{
   const val=t.type==='checkbox'?t.checked:t.value;
   // Sélecteur de mois (Gestion financière)
   if(name==='finMonth'){state.finMonth=val||new Date().toISOString().slice(0,7);render();return;}
+  // Simulateur de lissage : heures à répartir
+  if(name==='lissageH'){state.lissageH=val;render();return;}
   // Config IA (clé API) — stockée localement, hors sauvegarde
   if(name.startsWith('ai.')){
     const k=name.slice(3);
@@ -1745,6 +1781,26 @@ document.addEventListener('change',e=>{
   }
   if(!getActive())return;
   setD(name,val);
+  // Clôture du pointage : date + proposition de REX avec la marge finale
+  if(name==='finance.pointage'){
+    const ch=getActive();
+    if(ch){
+      if(val==='cloture'){
+        ch.d.finance.dateCloture=todayISO();save();
+        const env=enveloppeChantier(ch);
+        if(confirm('Pointage clôturé : plus aucune heure ne devrait être pointée sur ce chantier.\n\nGénérer un retour d\'expérience (REX) avec la marge finale ('+eurRaw(env.reserve)+' · '+pct(env.margePct)+') ?')){
+          state.rexData.list.unshift({id:'rx'+Date.now(),chantier:ch.d.ident.nom||'',date:todayISO(),
+            difficultes:'',solutions:'',erreurs:'',fournisseurs:'',materiaux:'',
+            dureeReelle:(ch.d.ident.debut&&ch.d.finance.dateCloture)?fmtDateFR(ch.d.ident.debut)+' → '+fmtDateFR(ch.d.finance.dateCloture):'',
+            rendement:'Marge finale : '+eurRaw(env.reserve)+' ('+pct(env.margePct)+')'});
+          saveRex();
+          toast('REX créé avec la marge finale — complétez-le dans Assistant IA → Mémoire métier.');
+        }
+      }else{
+        ch.d.finance.dateCloture='';save();
+      }
+    }
+  }
   // TS: si statut = Refusé → montant accordé = 0
   if(name.match(/^ts\.\d+\.statut$/)&&val==='Refusé'){
     const idx=parseInt(name.split('.')[1]);
@@ -2415,8 +2471,13 @@ function renderHeures(d,c){
     </div>
   `).join('');
 
+  const envH=enveloppeChantier({d});
   return`
     <div class="page-head"><h1 class="page-title">Heures Main d'œuvre</h1>${csvBtn('heures')}</div>
+    ${!envH.ouvert?`<div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:12px;background:#fdecec;border:1px solid #f3b0b0;color:var(--neg);padding:9px 11px;border-radius:8px">⛔ Pointage clôturé${d.finance.dateCloture?' le '+fmtDateFR(d.finance.dateCloture):''} — plus aucune heure ne devrait être pointée sur ce chantier (réouverture possible dans Finances → Enveloppe & réserve).</div>`
+      :envH.recettes>0?`<div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:12px;background:${envH.capH>0?'#f0f6ff':'#fff8ec'};border:1px solid ${envH.capH>0?'#d3e3fb':'#ffe0b2'};color:${envH.capH>0?'#264a80':'#8a5a00'};padding:9px 11px;border-radius:8px">
+        ${envH.capH>0?`💶 Réserve de l'enveloppe : <strong>${eurRaw(envH.reserve)}</strong> (${pct(envH.margePct)}) — vous pouvez encore pointer <strong>≈ ${envH.capH.toFixed(0)} h</strong> en restant au-dessus du plancher de ${envH.plancher} %.`
+          :`⚠ Plancher de marge ${envH.plancher} % atteint (marge actuelle ${pct(envH.margePct)}) — chaque heure pointée ici entame la marge cible.`}</div>`:''}
     <div class="kpi-strip">
       <div class="kpi-card"><div class="kpi-label">Budget heures</div><div class="kpi-value">${c.hBudg||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
       <div class="kpi-card"><div class="kpi-label">Consommé (toutes semaines)</div><div class="kpi-value" style="color:${c.hColor}">${c.hConso>0?c.hConso:c.hConso||'—'}<span style="font-size:14px;font-weight:400"> h</span></div></div>
@@ -3144,26 +3205,76 @@ function renderFinance(d,c){
     </div>`;
   }).join('');
 
-  // ── Vue DÉTAILLÉE (SAP) : tableau complet avec ventilation mensuelle ──
+  // ── Vue DÉTAILLÉE « pro » (type SAP) : bloc synthèse + bloc par nature avec %CA ──
+  const mkRef=(d.raf.moisRef||todayISO().slice(0,7));
+  const yrRef=mkRef.slice(0,4);
+  // Heures MO par période, depuis la grille hebdomadaire (semaine rattachée au mois de son jeudi)
+  const moHrs=filt=>{let h=0;Object.entries(d.heuresHebdo||{}).forEach(([wk,wd])=>{
+    let key='';try{const st=weekOf(wk);const th=new Date(st);th.setDate(th.getDate()+3);key=th.toISOString().slice(0,7);}catch(e){}
+    if(filt(key))Object.values(wd).forEach(days=>{h+=Object.values(days).reduce((s,v)=>s+n(v),0);});});return h;};
+  const moReelM=moHrs(k=>k===mkRef)*c.txH;
+  const moReelExo=moHrs(k=>k.slice(0,4)===yrRef)*c.txH;
+  const sitM=d.situations.filter(s=>(s.dateEnvoi||'').slice(0,7)===mkRef).reduce((s,x)=>s+n(x.montantHT),0);
+  const sitExo=d.situations.filter(s=>(s.dateEnvoi||'').slice(0,4)===yrRef).reduce((s,x)=>s+n(x.montantHT),0);
+  const caMerite=c.marcheActualise*Math.min(c.planAv||0,100)/100;
+  const margeCum=caMerite-rafTotReel;
+  const margeCumPct=caMerite>0?margeCum/caMerite*100:0;
+  const resteCA=Math.max(0,c.marcheActualise-caMerite);
+  const resteFact=Math.max(0,c.marcheActualise-c.totalFacture);
+  const resteMarge=rafMargeTerm-margeCum;
+  const spread=v=>c.rafCnt>0?v/c.rafCnt:0;
+  const cellE=v=>v!==null&&v!==undefined&&Math.abs(v)>0.004?eurRaw(v):'—';
+  const synthRow=(label,rm,rexo,rcum,reste,strong)=>`<tr${strong?' style="font-weight:600"':''}>
+      <td class="sticky" style="font-weight:600">${label}</td>
+      <td class="auto">${cellE(rm)}</td><td class="auto">${cellE(rexo)}</td>
+      <td class="auto" style="font-weight:700">${cellE(rcum)}</td>
+      <td class="auto">${cellE(reste)}</td>
+      ${c.rafMonths.map(()=>`<td class="auto" style="color:var(--sub);white-space:nowrap">${Math.abs(spread(reste||0))>0.004?eurRaw(spread(reste)):'—'}</td>`).join('')}
+    </tr>`;
+  const rafSynthRows=
+    synthRow('CA MÉRITÉ',null,null,caMerite,resteCA)+
+    synthRow('MARGE BRUTE',null,null,margeCum,resteMarge)+
+    `<tr style="background:#fafbfc">
+      <td class="sticky" style="color:var(--sub);font-size:11px;padding-left:20px">MARGE BRUTE (%)</td>
+      <td></td><td></td>
+      <td class="auto" style="font-size:11px;color:${margeCumPct<0?'var(--neg)':'var(--sub)'}">${caMerite>0?pct(margeCumPct):'—'}</td>
+      <td class="auto" style="font-size:11px;color:var(--sub)">${c.marcheActualise>0?pct(rafMargeTermPct):'—'}</td>
+      ${c.rafMonths.map(()=>'<td></td>').join('')}
+    </tr>`+
+    synthRow('FACTURATION',sitM,sitExo,c.totalFacture,resteFact);
   const rafRows=rafCalc.map(r=>{
     const {row,rl,bi,bv,reel,eng,eac,reste,ecart:ecartRAF,pctCA}=r;
-    const monthVal=c.rafCnt>0?reste/c.rafCnt:0;
+    const monthVal=spread(reste);
+    const rm=row.id==='mo'?moReelM:null;
+    const rexo=row.id==='mo'?moReelExo:null;
+    const reelPct=c.marcheActualise>0?reel/c.marcheActualise*100:0;
     return`<tr>
-      <td class="sticky" style="font-weight:500">${esc(row.label)} ${rafEtatBadge(r)}</td>
-      <td style="font-size:11px;color:var(--sub);white-space:nowrap">${esc(row.src)}</td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:80px"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?bi:''}"></div></td>
-      <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div></td>
-      <td class="auto" style="font-weight:600">${eac>0?eurRaw(eac):'—'}</td>
-      <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
-      <td class="auto">${pctCA>0?pctCA.toFixed(1)+'%':'—'}</td>
+      <td class="sticky" style="font-weight:600;text-transform:uppercase;font-size:12px">${esc(row.label)} ${rafEtatBadge(r)}</td>
+      <td class="auto" title="Réel du mois — calculé pour la main d'œuvre (grille heures)">${cellE(rm)}</td>
+      <td class="auto" title="Réel de l'exercice ${yrRef}">${cellE(rexo)}</td>
       ${row.manual
-        ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" style="width:75px"></div></td><td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:75px"></div></td>`
-        :`<td class="auto">${reel>0?eurRaw(reel):'—'}</td><td class="auto">${eng>0?eurRaw(eng):'—'}</td>`}
-      ${c.rafMonths.map(m=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0?eurRaw(monthVal):'—'}</td>`).join('')}
+        ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" style="width:80px" placeholder="cumul"></div></td>`
+        :`<td class="auto" style="font-weight:600">${cellE(reel)}</td>`}
+      ${row.manual
+        ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:75px"></div></td>`
+        :`<td class="auto">${cellE(eng)}</td>`}
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?bi:'budget'}"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div></td>
+      <td class="auto" style="font-weight:700">${cellE(eac)}</td>
+      <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
+      ${c.rafMonths.map(()=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0.004?eurRaw(monthVal):'—'}</td>`).join('')}
+    </tr>
+    <tr style="background:#fafbfc">
+      <td class="sticky" style="color:var(--sub);font-size:11px;padding-left:20px">% CA</td>
+      <td></td><td></td>
+      <td class="auto" style="font-size:11px;color:var(--sub)">${reelPct>0.004?reelPct.toFixed(2)+' %':'—'}</td>
+      <td></td><td></td><td></td>
+      <td class="auto" style="font-size:11px;color:var(--sub)">${pctCA>0.004?pctCA.toFixed(2)+' %':'—'}</td>
+      <td></td>
+      ${c.rafMonths.map(()=>'<td></td>').join('')}
     </tr>`;
   }).join('');
+  const rafTotReelPct=c.marcheActualise>0?rafTotReel/c.marcheActualise*100:0;
 
   // ── Indicateurs de marge (sémantique BTP) ──────────────────────────────────
   const recettes=c.marcheActualise;                 // CA prévu (marché actualisé)
@@ -3202,6 +3313,33 @@ function renderFinance(d,c){
       ${kpi('Marge prévisionnelle',recettes>0?eurRaw(margePrev):'—',`${recettes>0?pct(tauxPrev):'—'} · objectif ${recettes>0?pct(tauxObj):'—'}`,margeColor)}
       ${kpi('Trésorerie chantier',(encaisse||engage)?eurRaw(treso):'—',`Encaissé ${eurRaw(encaisse)} − dépensé ${eurRaw(engage)}`,treso<0?'var(--neg)':'var(--pos)')}
     </div>
+
+    <!-- Enveloppe & réserve (lissage de marge) -->
+    ${(()=>{const env=enveloppeChantier({d});
+      return`<div class="card" style="margin-bottom:16px;border:1px solid ${env.reserveActive?'var(--pos)':'var(--border)'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="card-title" style="margin:0">Enveloppe & réserve
+          ${env.reserveActive?'<span class="badge badge-green" style="margin-left:6px">Réserve active</span>':''}
+          ${!env.ouvert?'<span class="badge badge-grey" style="margin-left:6px">Pointage clôturé'+(d.finance.dateCloture?' le '+fmtDateFR(d.finance.dateCloture):'')+'</span>':''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px">
+          <label style="display:flex;align-items:center;gap:6px">Pointage
+            <select class="form-select" name="finance.pointage" style="width:auto">
+              <option value="ouvert"${env.ouvert?' selected':''}>Ouvert</option>
+              <option value="cloture"${!env.ouvert?' selected':''}>Clôturé</option>
+            </select></label>
+          <label style="display:flex;align-items:center;gap:6px">Plancher de marge
+            <input type="number" name="finance.margePlancher" value="${esc(d.finance.margePlancher||'')}" placeholder="${n((state.factData.config||{}).margeObjectif)||42}" style="width:58px;padding:4px 6px;border:1px solid var(--border);border-radius:6px"> %</label>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div class="ck-card"><div class="ck-head">Recettes totales</div><div class="ck-val" style="font-size:18px">${env.recettes>0?eurRaw(env.recettes):'—'}</div><div style="font-size:11px;color:var(--sub)">marché + avenants${env.tsAcc>0?' + suppléments '+eurRaw(env.tsAcc):''}</div></div>
+        <div class="ck-card"><div class="ck-head">Dépensé réel</div><div class="ck-val" style="font-size:18px">${env.depense>0?eurRaw(env.depense):'—'}</div><div style="font-size:11px;color:var(--sub)">heures + ST + fournitures</div></div>
+        <div class="ck-card"><div class="ck-head">Réserve disponible</div><div class="ck-val" style="font-size:18px;color:${env.reserve<0?'var(--neg)':env.sousPlancher?'var(--warn)':'var(--pos)'}">${env.recettes>0?eurRaw(env.reserve):'—'}</div><div style="font-size:11px;color:var(--sub)">${env.recettes>0?pct(env.margePct)+' de marge · plancher '+env.plancher+' %':''}</div></div>
+        <div class="ck-card"><div class="ck-head">Capacité d'absorption</div><div class="ck-val" style="font-size:18px;color:${env.capH>0?'var(--acc)':'var(--sub)'}">${env.ouvert?(env.capH>0?'≈ '+env.capH.toFixed(0)+' h':'0 h'):'—'}</div><div style="font-size:11px;color:var(--sub)">${env.ouvert?(env.capH>0?eurRaw(env.capEuro)+' pointables au-dessus du plancher':'plancher atteint — ne plus pointer ici'):'pointage clôturé'}</div></div>
+      </div>
+      ${env.reserveActive?`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:10px;background:#eafaf0;border:1px solid #b6e6c8;color:var(--pos);padding:9px 11px;border-radius:8px">✅ Travaux terminés, pointage ouvert : ce chantier peut absorber ≈ ${env.capH.toFixed(0)} h d'autres affaires pour lisser votre marge (vue globale dans Gestion financière → Lissage).</div>`:''}
+    </div>`;})()}
 
     <!-- Compte de résultat visuel -->
     <div class="ck-card" style="margin-bottom:16px">
@@ -3354,36 +3492,62 @@ function renderFinance(d,c){
       </div>
 
       ${state.rafView==='detail'?`
-      <!-- Vue détaillée (SAP) : toutes les colonnes + ventilation mensuelle -->
+      <!-- Vue détaillée « pro » (type SAP) : synthèse + détail par nature avec %CA -->
       <div class="param-row" style="margin-bottom:10px">
-        <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
+        <div class="form-field"><label class="form-label">Mois de référence (M)</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Méthode</label><select name="raf.methode" class="form-select">
           ${['Avancement physique','À terminaison','Réengagement'].map(v=>`<option${d.raf.methode===v?' selected':''}>${v}</option>`).join('')}
         </select></div>
         <div class="form-field" style="flex:2"><label class="form-label">Commentaires</label><input type="text" name="raf.commentaires" value="${esc(d.raf.commentaires)}" class="form-input"></div>
       </div>
+
+      <div class="ck-head" style="margin:4px 0 8px">Synthèse — CA mérité · marge · facturation</div>
+      <div class="tbl-wrap" style="margin-bottom:16px">
+        <table>
+          <thead><tr>
+            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2;min-width:150px"></th>
+            <th title="${fmtMonthFR(mkRef)}">Réel M</th><th>Réel exercice ${yrRef}</th><th>Réel cumulé</th><th>Reste à obtenir</th>
+            ${c.rafMonths.map(m=>`<th style="white-space:nowrap">${m}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rafSynthRows}</tbody>
+        </table>
+      </div>
+      <div class="note" style="text-transform:none;letter-spacing:0;margin:-8px 0 14px">CA mérité = marché × avancement (${(c.planAv||0).toFixed(0)}%). Facturation = situations de travaux (Réel M = envoyées en ${fmtMonthFR(mkRef)}). Colonnes mensuelles = répartition du reste sur ${c.rafCnt} mois (jusqu'à la date de fin).</div>
+
+      <div class="ck-head" style="margin:0 0 8px">Détail par nature de coût</div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2;min-width:130px">Poste</th>
-            <th>Source</th><th>Budget init.</th><th>Budget validé</th>
-            <th>Réel cumulé</th><th>Reste à dép.</th><th>EAC</th><th>Écart BV-EAC</th><th>% CA</th>
-            <th>Réel M</th><th>Engagement</th>
+            <th style="position:sticky;left:0;background:#f0f2f5;z-index:2;min-width:150px">Poste</th>
+            <th title="${fmtMonthFR(mkRef)}">Réel M</th><th>Réel exercice ${yrRef}</th><th>Réel cumulé</th><th>Engagé</th>
+            <th>Budget</th><th>Reste à dép. ✎</th><th>Coût final (EAC)</th><th>Écart</th>
             ${c.rafMonths.map(m=>`<th style="white-space:nowrap">${m}</th>`).join('')}
           </tr></thead>
           <tbody>${rafRows}</tbody>
-          <tfoot><tr style="background:#f0f2f5;font-weight:700">
-            <td colspan="2">Total RAF</td>
-            <td>${rafTotBI>0?eurRaw(rafTotBI):'—'}</td>
-            <td>${rafTotBV>0?eurRaw(rafTotBV):'—'}</td>
+          <tfoot>
+          <tr style="background:#f0f2f5;font-weight:700">
+            <td class="sticky" style="background:#f0f2f5">TOTAL</td>
+            <td>${cellE(moReelM)}</td>
+            <td>${cellE(moReelExo)}</td>
             <td>${rafTotReel>0?eurRaw(rafTotReel):'—'}</td>
+            <td>—</td>
+            <td>${rafTotBV>0?eurRaw(rafTotBV):'—'}</td>
             <td>${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</td>
             <td>${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</td>
             <td style="color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?eurRaw(rafTotEcart):'—'}</td>
-            <td>${rafTotPctCA>0?rafTotPctCA.toFixed(1)+'%':'—'}</td>
-            <td colspan="${2+c.rafMonths.length}"></td>
-          </tr></tfoot>
+            ${c.rafMonths.map(()=>`<td style="color:var(--sub)">${spread(rafTotRAD)>0.004?eurRaw(spread(rafTotRAD)):'—'}</td>`).join('')}
+          </tr>
+          <tr style="background:#f7f8fa">
+            <td class="sticky" style="background:#f7f8fa;color:var(--sub);font-size:11px;padding-left:20px">% CA</td>
+            <td></td><td></td>
+            <td style="font-size:11px;color:var(--sub)">${rafTotReelPct>0.004?rafTotReelPct.toFixed(2)+' %':'—'}</td>
+            <td></td><td></td><td></td>
+            <td style="font-size:11px;color:var(--sub)">${rafTotPctCA>0.004?rafTotPctCA.toFixed(2)+' %':'—'}</td>
+            <td></td>
+            ${c.rafMonths.map(()=>'<td></td>').join('')}
+          </tr>
+          </tfoot>
         </table>
       </div>`:`
       <!-- Vue simple : 3 questions par poste -->
@@ -4574,6 +4738,48 @@ function renderGestion(){
         </div>`;}).join(''):`<div class="note" style="text-align:center;padding:14px">Aucun devis accepté en attente de facturation. Les devis passés « Accepté » apparaissent ici.</div>`}
     </div>
 
+    ${(()=>{ // ── Lissage de marge : enveloppes ouvertes au pointage ──
+      const simH=n(state.lissageH);
+      const rows=state.chantiers.map(ch=>({ch,env:enveloppeChantier(ch)})).filter(x=>x.env.ouvert&&x.env.recettes>0);
+      if(!rows.length)return`<div class="card" style="margin-bottom:14px">
+        <div class="card-title">Lissage de marge — enveloppes ouvertes au pointage</div>
+        <div class="note" style="text-align:center;padding:14px">Aucun chantier avec enveloppe ouverte. Renseignez le marché de vos chantiers ; un chantier terminé peut rester « Pointage : ouvert » (Finances → Enveloppe & réserve) pour absorber des heures et lisser la marge.</div>
+      </div>`;
+      rows.sort((a,b)=>b.env.capH-a.env.capH);
+      const best=rows[0]&&rows[0].env.capH>0?rows[0]:null;
+      const totCapH=rows.reduce((s,x)=>s+x.env.capH,0);
+      return`<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="card-title" style="margin:0">Lissage de marge — enveloppes ouvertes au pointage</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+          Simuler <input type="number" name="lissageH" value="${esc(state.lissageH||'')}" placeholder="h" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px"> h à pointer
+        </div>
+      </div>
+      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px">Capacité d'absorption totale du portefeuille : <strong>≈ ${totCapH.toFixed(0)} h</strong>.${best?` Suggestion : pointez en priorité sur <strong>${esc(best.ch.d.ident.nom||'?')}</strong> (≈ ${best.env.capH.toFixed(0)} h disponibles au-dessus du plancher).`:' ⚠ Aucune enveloppe au-dessus de son plancher : le lissage entamera une marge cible.'}</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Chantier</th><th>État</th><th>Marge actuelle</th><th>Réserve</th><th>Capacité</th><th>h ce mois</th>${simH>0?`<th>Si +${simH} h ici</th>`:''}<th></th></tr></thead>
+        <tbody>
+        ${rows.map(({ch,env})=>{
+          const hM=hoursMonth(ch.d,mk);
+          const gauge=Math.max(0,Math.min(100,env.plancher>0?env.margePct/env.plancher*100:0));
+          const simPct=simH>0&&env.recettes>0?(env.reserve-simH*env.txH)/env.recettes*100:null;
+          return`<tr>
+            <td class="sticky" style="font-weight:600">${esc(ch.d.ident.nom||'Sans nom')}</td>
+            <td>${env.reserveActive?'<span class="badge badge-green">Réserve active</span>':env.travauxFinis?'<span class="badge badge-grey">Terminé</span>':'<span class="badge badge-blue">En cours</span>'}</td>
+            <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:8px"><strong style="color:${env.sousPlancher?'var(--warn)':'var(--pos)'}">${pct(env.margePct)}</strong>
+              <div class="prog-bar" style="width:70px;height:5px"><div class="prog-fill" style="width:${gauge}%;background:${env.sousPlancher?'var(--warn)':'var(--pos)'}"></div></div></div>
+              <div style="font-size:10px;color:var(--sub)">plancher ${env.plancher} %</div></td>
+            <td style="font-weight:600;white-space:nowrap;color:${env.reserve<0?'var(--neg)':'var(--text)'}">${eurRaw(env.reserve)}</td>
+            <td style="white-space:nowrap;color:${env.capH>0?'var(--acc)':'var(--sub)'};font-weight:600">${env.capH>0?'≈ '+env.capH.toFixed(0)+' h':'0 h'}</td>
+            <td style="white-space:nowrap">${hM>0?hM.toFixed(1)+' h':'—'}</td>
+            ${simH>0?`<td style="white-space:nowrap;font-weight:600;color:${simPct!==null&&simPct>=env.plancher?'var(--pos)':'var(--neg)'}">${simPct!==null?pct(simPct):'—'}${simPct!==null&&simPct>=env.plancher?' ✓':' ⚠'}</td>`:''}
+            <td><button class="btn btn-ghost btn-sm" data-action="navTo" data-ch="${ch.id}" data-scr="${ch.d.type==='petite'?'home':'heures'}">Pointer →</button></td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+      ${simH>0?`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:8px">La colonne « Si +${simH} h ici » montre la marge du chantier si vous y pointez la totalité des ${simH} h (coût = h × taux horaire du chantier). ✓ = reste au-dessus de son plancher.</div>`:''}
+      </div>`;})()}
+
     <div class="kpi-card" style="margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><div class="kpi-label">Taux de déboursé par défaut</div><div class="kpi-sub">appliqué quand le déboursé sec d'une facture n'est pas saisi (marge estimée)</div></div>
@@ -5390,6 +5596,10 @@ function renderPortfolio(){
         <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
           <span class="badge ${statusBadge(s.statut)}">${s.statut}</span>
           <span class="pill ${ch.d.type==='petite'?'st-encours':'st-afaire'}" style="font-size:10px">${ch.d.type==='petite'?'Petite':'Grosse'}</span>
+          ${(()=>{const e=enveloppeChantier(ch);
+            if(e.reserveActive&&e.capH>0)return`<span class="badge badge-green" title="Travaux terminés, pointage ouvert : ≈ ${e.capH.toFixed(0)} h absorbables">💶 Réserve ≈ ${e.capH.toFixed(0)} h</span>`;
+            if(!e.ouvert)return'<span class="badge badge-grey" title="Pointage clôturé">Clôturé</span>';
+            return'';})()}
         </div>
       </div>
       <div style="font-size:13px;color:var(--sub);margin-bottom:10px">${s.chef?'Chef: '+esc(s.chef):''}${s.mo?` · MO: ${esc(s.mo)}`:''}</div>
