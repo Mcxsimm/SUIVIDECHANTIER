@@ -1955,6 +1955,23 @@ document.addEventListener('click',e=>{
     if(action==='finPrevMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),-1);render();return;}
     if(action==='finNextMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),1);render();return;}
     if(action==='finThisMonth'){state.finMonth=new Date().toISOString().slice(0,7);render();return;}
+    // Finances chantier : masquer/afficher une section + vues RAF
+    if(action==='finToggleSection'){
+      const ch=getActive();const k=btn.dataset.key;
+      if(ch&&(k==='hideSituations'||k==='hideAvenants')){ch.d.finance[k]=!ch.d.finance[k];save();render();}
+      return;
+    }
+    if(action==='rafToggleView'){state.rafView=state.rafView==='detail'?'simple':'detail';render();return;}
+    if(action==='rafSolder'){
+      const ch=getActive();const pid=btn.dataset.poste;
+      if(ch&&pid){
+        if(!ch.d.raf.lines)ch.d.raf.lines={};
+        if(!ch.d.raf.lines[pid])ch.d.raf.lines[pid]={};
+        ch.d.raf.lines[pid].rad='0';
+        save();render();
+      }
+      return;
+    }
     // ── Avoirs ──
     if(action==='addAvoir'){newAvoir('');state.avoirId=state.factData.avoirs[0].id;state.screen='avoirs';render();return;}
     if(action==='avoirFromFacture'){const av=newAvoir(id);state.factId=null;state.avoirId=av.id;state.screen='avoirs';render();toast('Avoir '+av.num+' créé.');return;}
@@ -3075,19 +3092,67 @@ function renderFinance(d,c){
   }).join('');
 
   // ── RAF table ───────────────────────────────────────────────────────────────
+  // Calcul par poste (partagé entre vue simple et vue détaillée)
+  const rafCalc=c.rafDefs.map(row=>({row,...rafRowCalc(d,row,c.marcheActualise)}));
   let rafTotBI=0,rafTotBV=0,rafTotReel=0,rafTotRAD=0,rafTotEAC=0;
-  const rafRows=c.rafDefs.map(row=>{
-    const r=rafRowCalc(d,row,c.marcheActualise);
-    const {rl,bi,bv,reel,eng,radSet,eac,reste,ecart:ecartRAF,pctCA}=r;
+  rafCalc.forEach(r=>{rafTotBI+=r.bi;rafTotBV+=r.bv;rafTotReel+=r.reel;rafTotRAD+=r.reste;rafTotEAC+=r.eac;});
+  const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
+  const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
+  const rafMargeTerm=c.marcheActualise-rafTotEAC;           // marge à terminaison (bottom-up)
+  const rafMargeTermPct=c.marcheActualise>0?rafMargeTerm/c.marcheActualise*100:0;
+  const rafEtatBadge=r=>r.radSet?(r.reste<=0?'<span class="badge badge-green" style="font-size:9px">soldé</span>':'<span class="badge badge-blue" style="font-size:9px">estimé</span>'):(r.bv>0?'<span class="badge badge-orange" style="font-size:9px">à estimer</span>':'');
+
+  // ── Vue SIMPLE : une carte par poste, 4 champs qui se lisent de gauche à droite ──
+  const rafSimpleRows=rafCalc.map(r=>{
+    const {row,rl,bi,bv,reel,radSet,eac,reste,ecart}=r;
+    const consoPct=eac>0?Math.min(100,reel/eac*100):0;
+    const over=bv>0&&eac>bv;
+    return`
+    <div class="ck-card" style="padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <strong style="font-size:13px">${esc(row.label)}</strong>
+          ${rafEtatBadge(r)}
+          <span style="font-size:11px;color:var(--sub)">${esc(row.src)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--sub)">Écart budget :
+          <strong style="color:${bv<=0?'var(--sub)':ecart<0?'var(--neg)':'var(--pos)'}">${bv>0?(ecart>=0?'+':'')+eurRaw(ecart):'—'}</strong>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
+        <div class="form-field" style="margin:0"><label class="form-label">1 · Budget du poste</label>
+          <div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" placeholder="${bi>0?bi:'budget'}" class="form-input"></div></div>
+        <div class="form-field" style="margin:0"><label class="form-label">2 · Dépensé à date</label>
+          ${row.manual
+            ?`<div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" placeholder="0" class="form-input"></div>`
+            :`<div class="form-input" style="background:#f7f9fb;border-color:transparent;font-weight:600">${reel>0?eurRaw(reel):'—'} <span style="font-size:10px;color:var(--sub);font-weight:400">auto</span></div>`}
+        </div>
+        <div class="form-field" style="margin:0"><label class="form-label">3 · Reste à dépenser</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <div class="amt-cell" style="flex:1"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'à estimer'}" class="form-input" title="Vide = non estimé (prudence = budget). 0 = poste terminé."></div>
+            ${radSet&&reste<=0?'':`<button class="btn btn-ghost btn-sm" data-action="rafSolder" data-poste="${row.id}" title="Poste terminé : reste à dépenser = 0">Solder</button>`}
+          </div>
+        </div>
+        <div class="form-field" style="margin:0"><label class="form-label">= Coût final (EAC)</label>
+          <div class="form-input" style="background:${over?'#fdecec':'#f0f7f1'};border-color:transparent;font-weight:700;color:${over?'var(--neg)':'var(--text)'}">${eac>0?eurRaw(eac):'—'}</div>
+        </div>
+      </div>
+      ${eac>0?`<div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+        <div class="prog-bar" style="flex:1;height:6px"><div class="prog-fill" style="width:${consoPct}%;background:${over?'var(--neg)':'var(--acc)'}"></div></div>
+        <span style="font-size:10px;color:var(--sub);white-space:nowrap">${consoPct.toFixed(0)}% dépensé</span>
+      </div>`:''}
+    </div>`;
+  }).join('');
+
+  // ── Vue DÉTAILLÉE (SAP) : tableau complet avec ventilation mensuelle ──
+  const rafRows=rafCalc.map(r=>{
+    const {row,rl,bi,bv,reel,eng,eac,reste,ecart:ecartRAF,pctCA}=r;
     const monthVal=c.rafCnt>0?reste/c.rafCnt:0;
-    rafTotBI+=bi;rafTotBV+=bv;rafTotReel+=reel;rafTotRAD+=reste;rafTotEAC+=eac;
-    // état de la ligne : soldé (RAD=0), estimé (RAD saisi>0) ou prévisionnel (défaut budget)
-    const etat=radSet?(reste<=0?'<span class="badge badge-green" style="font-size:9px">soldé</span>':'<span class="badge badge-blue" style="font-size:9px">estimé</span>'):(bv>0?'<span class="badge badge-orange" style="font-size:9px">prévu</span>':'');
     return`<tr>
-      <td class="sticky" style="font-weight:500">${esc(row.label)} ${etat}</td>
+      <td class="sticky" style="font-weight:500">${esc(row.label)} ${rafEtatBadge(r)}</td>
       <td style="font-size:11px;color:var(--sub);white-space:nowrap">${esc(row.src)}</td>
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bi" value="${rl.bi||''}" style="width:80px"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?n(bi):''}"></div></td>
+      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?bi:''}"></div></td>
       <td class="auto">${reel>0?eurRaw(reel):'—'}</td>
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div></td>
       <td class="auto" style="font-weight:600">${eac>0?eurRaw(eac):'—'}</td>
@@ -3099,11 +3164,6 @@ function renderFinance(d,c){
       ${c.rafMonths.map(m=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0?eurRaw(monthVal):'—'}</td>`).join('')}
     </tr>`;
   }).join('');
-
-  const rafTotPctCA=c.marcheActualise>0?rafTotEAC/c.marcheActualise*100:0;
-  const rafTotEcart=rafTotBV>0?rafTotBV-rafTotEAC:0;
-  const rafMargeTerm=c.marcheActualise-rafTotEAC;           // marge à terminaison (bottom-up)
-  const rafMargeTermPct=c.marcheActualise>0?rafMargeTerm/c.marcheActualise*100:0;
 
   // ── Indicateurs de marge (sémantique BTP) ──────────────────────────────────
   const recettes=c.marcheActualise;                 // CA prévu (marché actualisé)
@@ -3224,15 +3284,23 @@ function renderFinance(d,c){
       </div>
     </div>
 
-    <!-- Situations de travaux -->
+    <!-- Situations de travaux (masquable) -->
+    ${d.finance.hideSituations?`
+    <div class="card" style="margin-bottom:14px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;opacity:.75">
+      <div class="card-title" style="margin:0">Situations de travaux <span class="badge badge-grey" style="margin-left:6px">masquée</span>${facture>0?` <span class="note" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">${eurRaw(facture)} facturés</span>`:''}</div>
+      <button class="btn btn-ghost btn-sm" data-action="finToggleSection" data-key="hideSituations">Afficher</button>
+    </div>`:`
     <div class="card" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <div class="card-title" style="margin:0">Situations de travaux</div>
-        ${csvBtn('situations')}
-        <div style="display:flex;gap:12px;font-size:12px">
-          <span>Facturé : <strong>${facture>0?eurRaw(facture):'—'}</strong></span>
-          <span>Encaissé : <strong style="color:var(--pos)">${encaisse>0?eurRaw(encaisse):'—'}</strong></span>
-          ${retardsSit>0?`<span style="color:var(--neg);font-weight:600">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${csvBtn('situations')}
+          <div style="display:flex;gap:12px;font-size:12px">
+            <span>Facturé : <strong>${facture>0?eurRaw(facture):'—'}</strong></span>
+            <span>Encaissé : <strong style="color:var(--pos)">${encaisse>0?eurRaw(encaisse):'—'}</strong></span>
+            ${retardsSit>0?`<span style="color:var(--neg);font-weight:600">${retardsSit} retard${retardsSit>1?'s':''}</span>`:''}
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="finToggleSection" data-key="hideSituations" title="Masquer cette section pour ce chantier">Masquer</button>
         </div>
       </div>
       <div class="tbl-wrap">
@@ -3242,15 +3310,23 @@ function renderFinance(d,c){
         </table>
       </div>
       <button class="add-row-btn" data-action="addRow" data-list="situations">${svgIcon(ico.plus,13)} Ajouter situation</button>
-    </div>
+    </div>`}
 
-    <!-- Avenants -->
+    <!-- Avenants (masquable) -->
+    ${d.finance.hideAvenants?`
+    <div class="card" style="margin-bottom:14px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;opacity:.75">
+      <div class="card-title" style="margin:0">Avenants <span class="badge badge-grey" style="margin-left:6px">masquée</span>${avCumul!==0?` <span class="note" style="font-size:11px;text-transform:none;letter-spacing:0;margin-left:6px">cumul ${eurRaw(avCumul)}</span>`:''}</div>
+      <button class="btn btn-ghost btn-sm" data-action="finToggleSection" data-key="hideAvenants">Afficher</button>
+    </div>`:`
     <div class="card" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
         <div class="card-title" style="margin:0">Avenants</div>
-        <div style="font-size:12px">
-          Cumul avenants : <strong style="color:${avCumul>=0?'var(--pos)':'var(--neg)'}">${avCumul!==0?eurRaw(avCumul):'—'}</strong>
-          &nbsp;·&nbsp; ${d.avenants.filter(a=>a.statut==='Signé').length} signé(s) / ${d.avenants.filter(a=>a.designation).length} total
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div style="font-size:12px">
+            Cumul avenants : <strong style="color:${avCumul>=0?'var(--pos)':'var(--neg)'}">${avCumul!==0?eurRaw(avCumul):'—'}</strong>
+            &nbsp;·&nbsp; ${d.avenants.filter(a=>a.statut==='Signé').length} signé(s) / ${d.avenants.filter(a=>a.designation).length} total
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="finToggleSection" data-key="hideAvenants" title="Masquer cette section pour ce chantier">Masquer</button>
         </div>
       </div>
       <div class="tbl-wrap">
@@ -3260,14 +3336,25 @@ function renderFinance(d,c){
         </table>
       </div>
       <button class="add-row-btn" data-action="addRow" data-list="avenants">${svgIcon(ico.plus,13)} Ajouter avenant</button>
-    </div>
+    </div>`}
 
-    <!-- RAF (analyse détaillée SAP) -->
+    <!-- Reste à faire (RAF) : vue simple par poste, vue détaillée SAP en option -->
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Analyse RAF (reste à faire) — par nature de coût</div>
-      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px;background:#f0f6ff;border:1px solid #d3e3fb;color:#264a80;padding:9px 11px;border-radius:8px">
-        Remplissez, par poste : <b>Budget validé</b> et <b>Reste à dépenser</b>. La colonne <b>Reste à dép.</b> pilote le résultat : <b>vide</b> = non estimé (EAC prudent = budget), une <b>valeur</b> = réel + reste, <b>0</b> = poste soldé (EAC = réel). Dès qu'une ligne est renseignée, le RAF <b>alimente l'EAC et la marge</b> ci-dessus (les KPI se recalculent).
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Reste à faire (RAF) — où en sont mes coûts, poste par poste ?</div>
+        <button class="btn btn-ghost btn-sm" data-action="rafToggleView">${state.rafView==='detail'?'Vue simple':'Vue détaillée (SAP)'}</button>
       </div>
+
+      <!-- Synthèse d'abord : le résultat en un coup d'œil -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+        <div class="ck-card"><div class="ck-head">Coût final prévu (EAC)</div><div class="ck-val" style="font-size:18px">${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</div><div style="font-size:11px;color:var(--sub)">dépensé ${eurRaw(rafTotReel)} + reste ${eurRaw(rafTotRAD)}</div></div>
+        <div class="ck-card"><div class="ck-head">Marge à terminaison</div><div class="ck-val" style="font-size:18px;color:${rafMargeTerm<0?'var(--neg)':'var(--pos)'}">${c.marcheActualise>0?eurRaw(rafMargeTerm):'—'}</div><div style="font-size:11px;color:var(--sub)">${c.marcheActualise>0?pct(rafMargeTermPct)+' du marché':'renseignez le marché'}</div></div>
+        <div class="ck-card"><div class="ck-head">Écart vs budget</div><div class="ck-val" style="font-size:18px;color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?(rafTotEcart>=0?'+':'')+eurRaw(rafTotEcart):'—'}</div><div style="font-size:11px;color:var(--sub)">${rafTotEcart<0?'⚠ dépassement':rafTotBV>0?'sous le budget':'renseignez les budgets'}</div></div>
+        <div class="ck-card"><div class="ck-head">Statut</div><div class="ck-val" style="font-size:15px;color:${c.rafFilled?'var(--pos)':'var(--sub)'}">${c.rafFilled?'✓ pilote les KPI':'Non renseigné'}</div><div style="font-size:11px;color:var(--sub)">${c.rafFilled?'EAC & marge = RAF':'KPI = budget/réel auto'}</div></div>
+      </div>
+
+      ${state.rafView==='detail'?`
+      <!-- Vue détaillée (SAP) : toutes les colonnes + ventilation mensuelle -->
       <div class="param-row" style="margin-bottom:10px">
         <div class="form-field"><label class="form-label">Mois de référence</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
@@ -3298,13 +3385,21 @@ function renderFinance(d,c){
             <td colspan="${2+c.rafMonths.length}"></td>
           </tr></tfoot>
         </table>
+      </div>`:`
+      <!-- Vue simple : 3 questions par poste -->
+      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px">
+        Pour chaque poste, répondez à 3 questions : <b>① quel budget ?</b> <b>② combien déjà dépensé ?</b> (automatique sauf Études/Autres) <b>③ combien reste-t-il à dépenser ?</b> → le coût final et la marge se calculent seuls. Poste terminé ? Cliquez <b>« Solder »</b>.
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px">
-        <div class="ck-card"><div class="ck-head">Coût à terminaison (EAC)</div><div class="ck-val" style="font-size:18px">${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</div><div style="font-size:11px;color:var(--sub)">Réel ${eurRaw(rafTotReel)} + reste ${eurRaw(rafTotRAD)}</div></div>
-        <div class="ck-card"><div class="ck-head">Marge à terminaison</div><div class="ck-val" style="font-size:18px;color:${rafMargeTerm<0?'var(--neg)':'var(--pos)'}">${c.marcheActualise>0?eurRaw(rafMargeTerm):'—'}</div><div style="font-size:11px;color:var(--sub)">${c.marcheActualise>0?pct(rafMargeTermPct)+' du marché':''}</div></div>
-        <div class="ck-card"><div class="ck-head">Écart budget (BV − EAC)</div><div class="ck-val" style="font-size:18px;color:${rafTotEcart<0?'var(--neg)':'var(--pos)'}">${rafTotBV>0?eurRaw(rafTotEcart):'—'}</div><div style="font-size:11px;color:var(--sub)">${rafTotEcart<0?'dépassement de budget':rafTotBV>0?'sous le budget validé':''}</div></div>
-        <div class="ck-card"><div class="ck-head">Statut RAF</div><div class="ck-val" style="font-size:15px;color:${c.rafFilled?'var(--pos)':'var(--sub)'}">${c.rafFilled?'✓ pilote les KPI':'Non renseigné'}</div><div style="font-size:11px;color:var(--sub)">${c.rafFilled?'EAC & marge = RAF':'KPI = budget/réel auto'}</div></div>
-      </div>
+      ${rafSimpleRows}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;background:#f0f2f5;border-radius:8px;padding:10px 14px;font-weight:700;font-size:13px">
+        <span>Total</span>
+        <span style="display:flex;gap:18px;flex-wrap:wrap">
+          <span>Budget ${rafTotBV>0?eurRaw(rafTotBV):'—'}</span>
+          <span>Dépensé ${rafTotReel>0?eurRaw(rafTotReel):'—'}</span>
+          <span>Reste ${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</span>
+          <span style="color:${rafTotEcart<0?'var(--neg)':'var(--acc)'}">Coût final ${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</span>
+        </span>
+      </div>`}
     </div>
   `;
 }
