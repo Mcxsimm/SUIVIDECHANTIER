@@ -2017,7 +2017,6 @@ document.addEventListener('click',e=>{
       if(ch&&(k==='hideSituations'||k==='hideAvenants')){ch.d.finance[k]=!ch.d.finance[k];save();render();}
       return;
     }
-    if(action==='rafToggleView'){state.rafView=state.rafView==='detail'?'simple':'detail';render();return;}
     if(action==='rafSolder'){
       const ch=getActive();const pid=btn.dataset.poste;
       if(ch&&pid){
@@ -3163,49 +3162,7 @@ function renderFinance(d,c){
   const rafMargeTermPct=c.marcheActualise>0?rafMargeTerm/c.marcheActualise*100:0;
   const rafEtatBadge=r=>r.radSet?(r.reste<=0?'<span class="badge badge-green" style="font-size:9px">soldé</span>':'<span class="badge badge-blue" style="font-size:9px">estimé</span>'):(r.bv>0?'<span class="badge badge-orange" style="font-size:9px">à estimer</span>':'');
 
-  // ── Vue SIMPLE : une carte par poste, 4 champs qui se lisent de gauche à droite ──
-  const rafSimpleRows=rafCalc.map(r=>{
-    const {row,rl,bi,bv,reel,radSet,eac,reste,ecart}=r;
-    const consoPct=eac>0?Math.min(100,reel/eac*100):0;
-    const over=bv>0&&eac>bv;
-    return`
-    <div class="ck-card" style="padding:12px 14px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <strong style="font-size:13px">${esc(row.label)}</strong>
-          ${rafEtatBadge(r)}
-          <span style="font-size:11px;color:var(--sub)">${esc(row.src)}</span>
-        </div>
-        <div style="font-size:12px;color:var(--sub)">Écart budget :
-          <strong style="color:${bv<=0?'var(--sub)':ecart<0?'var(--neg)':'var(--pos)'}">${bv>0?(ecart>=0?'+':'')+eurRaw(ecart):'—'}</strong>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
-        <div class="form-field" style="margin:0"><label class="form-label">1 · Budget du poste</label>
-          <div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" placeholder="${bi>0?bi:'budget'}" class="form-input"></div></div>
-        <div class="form-field" style="margin:0"><label class="form-label">2 · Dépensé à date</label>
-          ${row.manual
-            ?`<div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.reel" value="${rl.reel||''}" placeholder="0" class="form-input"></div>`
-            :`<div class="form-input" style="background:#f7f9fb;border-color:transparent;font-weight:600">${reel>0?eurRaw(reel):'—'} <span style="font-size:10px;color:var(--sub);font-weight:400">auto</span></div>`}
-        </div>
-        <div class="form-field" style="margin:0"><label class="form-label">3 · Reste à dépenser</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <div class="amt-cell" style="flex:1"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'à estimer'}" class="form-input" title="Vide = non estimé (prudence = budget). 0 = poste terminé."></div>
-            ${radSet&&reste<=0?'':`<button class="btn btn-ghost btn-sm" data-action="rafSolder" data-poste="${row.id}" title="Poste terminé : reste à dépenser = 0">Solder</button>`}
-          </div>
-        </div>
-        <div class="form-field" style="margin:0"><label class="form-label">= Coût final (EAC)</label>
-          <div class="form-input" style="background:${over?'#fdecec':'#f0f7f1'};border-color:transparent;font-weight:700;color:${over?'var(--neg)':'var(--text)'}">${eac>0?eurRaw(eac):'—'}</div>
-        </div>
-      </div>
-      ${eac>0?`<div style="display:flex;align-items:center;gap:8px;margin-top:9px">
-        <div class="prog-bar" style="flex:1;height:6px"><div class="prog-fill" style="width:${consoPct}%;background:${over?'var(--neg)':'var(--acc)'}"></div></div>
-        <span style="font-size:10px;color:var(--sub);white-space:nowrap">${consoPct.toFixed(0)}% dépensé</span>
-      </div>`:''}
-    </div>`;
-  }).join('');
-
-  // ── Vue DÉTAILLÉE « pro » (type SAP) : bloc synthèse + bloc par nature avec %CA ──
+  // ── Tableau RAF « pro » (type SAP) : bloc synthèse + bloc par nature avec %CA ──
   const mkRef=(d.raf.moisRef||todayISO().slice(0,7));
   const yrRef=mkRef.slice(0,4);
   // Heures MO par période, depuis la grille hebdomadaire (semaine rattachée au mois de son jeudi)
@@ -3243,7 +3200,7 @@ function renderFinance(d,c){
     </tr>`+
     synthRow('FACTURATION',sitM,sitExo,c.totalFacture,resteFact);
   const rafRows=rafCalc.map(r=>{
-    const {row,rl,bi,bv,reel,eng,eac,reste,ecart:ecartRAF,pctCA}=r;
+    const {row,rl,bi,bv,reel,eng,radSet,eac,reste,ecart:ecartRAF,pctCA}=r;
     const monthVal=spread(reste);
     const rm=row.id==='mo'?moReelM:null;
     const rexo=row.id==='mo'?moReelExo:null;
@@ -3259,7 +3216,7 @@ function renderFinance(d,c){
         ?`<td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.eng" value="${rl.eng||''}" style="width:75px"></div></td>`
         :`<td class="auto">${cellE(eng)}</td>`}
       <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.bv" value="${rl.bv||''}" style="width:80px" placeholder="${bi>0?bi:'budget'}"></div></td>
-      <td><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div></td>
+      <td><div style="display:flex;gap:4px;align-items:center;white-space:nowrap"><div class="amt-cell"><span class="sym">€</span><input type="number" name="raf.lines.${row.id}.rad" value="${rl.rad!==''&&rl.rad!=null?rl.rad:''}" style="width:80px" placeholder="${bv>0?Math.max(0,Math.round(bv-reel)):'reste'}" title="Vide = non estimé (EAC prudent = budget). Saisir 0 = poste soldé."></div>${radSet&&reste<=0?'':`<button class="btn btn-ghost btn-sm" data-action="rafSolder" data-poste="${row.id}" title="Poste terminé : reste à dépenser = 0" style="padding:2px 7px;font-size:11px">Solder</button>`}</div></td>
       <td class="auto" style="font-weight:700">${cellE(eac)}</td>
       <td class="auto" style="color:${ecartRAF<0?'var(--neg)':ecartRAF>0?'var(--pos)':'var(--sub)'}">${bv>0?eurRaw(ecartRAF):'—'}</td>
       ${c.rafMonths.map(()=>`<td class="auto" style="white-space:nowrap;color:var(--sub)">${monthVal>0.004?eurRaw(monthVal):'—'}</td>`).join('')}
@@ -3479,8 +3436,8 @@ function renderFinance(d,c){
     <!-- Reste à faire (RAF) : vue simple par poste, vue détaillée SAP en option -->
     <div class="card" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        <div class="card-title" style="margin:0">Reste à faire (RAF) — où en sont mes coûts, poste par poste ?</div>
-        <button class="btn btn-ghost btn-sm" data-action="rafToggleView">${state.rafView==='detail'?'Vue simple':'Vue détaillée (SAP)'}</button>
+        <div class="card-title" style="margin:0">Reste à faire (RAF)</div>
+        <div class="note" style="margin:0;text-transform:none;letter-spacing:0">Saisissez <b>Budget</b> et <b>Reste à dép.</b> — vide = non estimé (prudence = budget) · <b>0</b> ou « Solder » = poste terminé. Le RAF pilote l'EAC et la marge.</div>
       </div>
 
       <!-- Synthèse d'abord : le résultat en un coup d'œil -->
@@ -3491,8 +3448,7 @@ function renderFinance(d,c){
         <div class="ck-card"><div class="ck-head">Statut</div><div class="ck-val" style="font-size:15px;color:${c.rafFilled?'var(--pos)':'var(--sub)'}">${c.rafFilled?'✓ pilote les KPI':'Non renseigné'}</div><div style="font-size:11px;color:var(--sub)">${c.rafFilled?'EAC & marge = RAF':'KPI = budget/réel auto'}</div></div>
       </div>
 
-      ${state.rafView==='detail'?`
-      <!-- Vue détaillée « pro » (type SAP) : synthèse + détail par nature avec %CA -->
+      <!-- Tableau « pro » (type SAP) : synthèse + détail par nature avec %CA -->
       <div class="param-row" style="margin-bottom:10px">
         <div class="form-field"><label class="form-label">Mois de référence (M)</label><input type="month" name="raf.moisRef" value="${d.raf.moisRef||''}" class="form-input"></div>
         <div class="form-field"><label class="form-label">Clé SAP</label><input type="text" name="raf.cle" value="${esc(d.raf.cle)}" class="form-input"></div>
@@ -3549,21 +3505,7 @@ function renderFinance(d,c){
           </tr>
           </tfoot>
         </table>
-      </div>`:`
-      <!-- Vue simple : 3 questions par poste -->
-      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px">
-        Pour chaque poste, répondez à 3 questions : <b>① quel budget ?</b> <b>② combien déjà dépensé ?</b> (automatique sauf Études/Autres) <b>③ combien reste-t-il à dépenser ?</b> → le coût final et la marge se calculent seuls. Poste terminé ? Cliquez <b>« Solder »</b>.
       </div>
-      ${rafSimpleRows}
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;background:#f0f2f5;border-radius:8px;padding:10px 14px;font-weight:700;font-size:13px">
-        <span>Total</span>
-        <span style="display:flex;gap:18px;flex-wrap:wrap">
-          <span>Budget ${rafTotBV>0?eurRaw(rafTotBV):'—'}</span>
-          <span>Dépensé ${rafTotReel>0?eurRaw(rafTotReel):'—'}</span>
-          <span>Reste ${rafTotRAD>0?eurRaw(rafTotRAD):'—'}</span>
-          <span style="color:${rafTotEcart<0?'var(--neg)':'var(--acc)'}">Coût final ${rafTotEAC>0?eurRaw(rafTotEAC):'—'}</span>
-        </span>
-      </div>`}
     </div>
   `;
 }
