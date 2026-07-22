@@ -1526,6 +1526,29 @@ function rafRowCalc(d,row,marcheActualise){
   const filled=bi>0||bvRaw>0||radSet||(row.manual&&(n(rl.reel)>0||n(rl.eng)>0));
   return{rl,bi,bv,reel,eng,radSet,rad,eac,reste,ecart,pctCA,filled};
 }
+// Répartiteur de lissage : place `totalH` heures sur les chantiers `pool` (id→env)
+// sans faire passer aucun au-dessous de son plancher, tant que la réserve le permet.
+// Algorithme glouton équilibré : à chaque pas, on donne un petit incrément d'heures
+// au chantier qui a la plus grande capacité restante (celui le moins « en risque »).
+function repartirLissage(pool,totalH){
+  const items=pool.map(x=>({id:x.ch.id,nom:x.ch.d.ident.nom||'Sans nom',otp:(x.ch.d.ident.otp||'').trim(),
+    env:x.env,txH:x.env.txH||37.3,capH:Math.max(0,x.env.capH),alloc:0}));
+  let reste=Math.max(0,totalH);
+  const capTot=items.reduce((s,i)=>s+i.capH,0);
+  const step=Math.max(0.5,Math.min(1,reste/200)); // pas fin mais borné (perf)
+  let guard=0;
+  while(reste>1e-6&&guard++<100000){
+    // capacité restante = capH − alloc ; on sert le plus « large » d'abord
+    let best=null;
+    items.forEach(i=>{const left=i.capH-i.alloc;if(left>1e-6&&(!best||left>best.left)){best={i,left:left};}});
+    if(!best)break;                       // plus aucune capacité sans plomber → on s'arrête
+    const give=Math.min(step,reste,best.left);
+    best.i.alloc+=give;reste-=give;
+  }
+  // arrondi propre à 0,5 h
+  items.forEach(i=>{i.alloc=Math.round(i.alloc*2)/2;});
+  return{items,place:Math.max(0,totalH)-reste,reste,capTot,sature:reste>0.5};
+}
 // Heures pointées sur un mois donné (grille hebdo ; semaine rattachée au mois de son jeudi)
 function hoursMonth(d,ym){
   let h=0;
@@ -1747,8 +1770,11 @@ document.addEventListener('change',e=>{
   const val=t.type==='checkbox'?t.checked:t.value;
   // Sélecteur de mois (Gestion financière)
   if(name==='finMonth'){state.finMonth=val||new Date().toISOString().slice(0,7);render();return;}
-  // Simulateur de lissage : heures à répartir
+  // Simulateur de lissage : heures à répartir + sélection de chantiers
   if(name==='lissageH'){state.lissageH=val;render();return;}
+  if(name.startsWith('lissSel|')){
+    const id=name.split('|')[1];state.lissSel=state.lissSel||{};state.lissSel[id]=!!val;render();return;
+  }
   // Objectifs mensuels par OTP : name = "objotp|<code OTP>|ca" ou "|marge"
   if(name.startsWith('objotp|')){
     const parts=name.split('|');const otp=parts[1]||'';const field=parts[2];
@@ -2028,6 +2054,22 @@ document.addEventListener('click',e=>{
     if(action==='finPrevMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),-1);render();return;}
     if(action==='finNextMonth'){state.finMonth=shiftMonth(state.finMonth||new Date().toISOString().slice(0,7),1);render();return;}
     if(action==='finThisMonth'){state.finMonth=new Date().toISOString().slice(0,7);render();return;}
+    // Lissage : sélection groupée
+    if(action==='lissAll'||action==='lissNone'||action==='lissEligible'){
+      const rows=state.chantiers.map(ch=>({ch,env:enveloppeChantier(ch)})).filter(x=>x.env.ouvert&&x.env.recettes>0);
+      state.lissSel={};
+      rows.forEach(({ch,env})=>{state.lissSel[ch.id]=action==='lissAll'?true:action==='lissEligible'?env.capH>0:false;});
+      render();return;
+    }
+    if(action==='lissApply'){
+      const rows=state.chantiers.map(ch=>({ch,env:enveloppeChantier(ch)})).filter(x=>x.env.ouvert&&x.env.recettes>0&&(state.lissSel||{})[x.ch.id]&&x.env.capH>0);
+      const rep=repartirLissage(rows,n(state.lissageH));
+      const placed=rep.items.filter(i=>i.alloc>0);
+      if(!placed.length){toast('Aucune capacité disponible sur les chantiers sélectionnés.','err',3500);return;}
+      const lignes=placed.map(i=>'• '+i.nom+(i.otp?' ('+i.otp+')':'')+' : '+i.alloc.toFixed(1)+' h').join('\n');
+      alert('Plan de répartition ('+rep.place.toFixed(1)+' h placées'+(rep.sature?', '+rep.reste.toFixed(1)+' h non plaçables sans plomber':'')+') :\n\n'+lignes+'\n\nPointez ces heures dans chaque grille (bouton « Pointer → »). Ce plan est une suggestion, il ne modifie pas vos saisies.');
+      return;
+    }
     // Objectifs OTP : reprendre ceux du mois précédent
     if(action==='objCopyPrev'){
       const mk=state.finMonth||new Date().toISOString().slice(0,7);
@@ -4807,48 +4849,70 @@ function renderGestion(){
         </div>`;}).join(''):`<div class="note" style="text-align:center;padding:14px">Aucun devis accepté en attente de facturation. Les devis passés « Accepté » apparaissent ici.</div>`}
     </div>
 
-    ${(()=>{ // ── Lissage de marge : enveloppes ouvertes au pointage ──
+    ${(()=>{ // ── Répartiteur de lissage : je saisis des heures, je coche les chantiers, il répartit ──
       const simH=n(state.lissageH);
       const rows=state.chantiers.map(ch=>({ch,env:enveloppeChantier(ch)})).filter(x=>x.env.ouvert&&x.env.recettes>0);
       if(!rows.length)return`<div class="card" style="margin-bottom:14px">
-        <div class="card-title">Lissage de marge — enveloppes ouvertes au pointage</div>
+        <div class="card-title">Répartiteur de lissage</div>
         <div class="note" style="text-align:center;padding:14px">Aucun chantier avec enveloppe ouverte. Renseignez le marché de vos chantiers ; un chantier terminé peut rester « Pointage : ouvert » (Finances → Enveloppe & réserve) pour absorber des heures et lisser la marge.</div>
       </div>`;
       rows.sort((a,b)=>{const ao=(a.ch.d.ident.otp||'').trim(),bo=(b.ch.d.ident.otp||'').trim();
         if(ao!==bo)return ao===''?1:bo===''?-1:ao.localeCompare(bo);
         return b.env.capH-a.env.capH;});
-      const best=rows[0]&&rows[0].env.capH>0?rows[0]:null;
+      const sel=state.lissSel||{};
+      const selected=rows.filter(x=>sel[x.ch.id]&&x.env.capH>0);
+      const rep=simH>0&&selected.length?repartirLissage(selected,simH):null;
+      const allocById={};if(rep)rep.items.forEach(i=>allocById[i.id]=i.alloc);
       const totCapH=rows.reduce((s,x)=>s+x.env.capH,0);
+      const selCapH=selected.reduce((s,x)=>s+x.env.capH,0);
       return`<div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <div class="card-title" style="margin:0">Lissage de marge — enveloppes ouvertes au pointage</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:13px">
-          Simuler <input type="number" name="lissageH" value="${esc(state.lissageH||'')}" placeholder="h" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:6px"> h à pointer
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div class="card-title" style="margin:0">Répartiteur de lissage</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" data-action="lissEligible" title="Cocher les chantiers ayant de la réserve">Chantiers en réserve</button>
+          <button class="btn btn-ghost btn-sm" data-action="lissAll">Tout</button>
+          <button class="btn btn-ghost btn-sm" data-action="lissNone">Aucun</button>
         </div>
       </div>
-      <div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px">Capacité d'absorption totale du portefeuille : <strong>≈ ${totCapH.toFixed(0)} h</strong>.${best?` Suggestion : pointez en priorité sur <strong>${esc(best.ch.d.ident.nom||'?')}</strong> (≈ ${best.env.capH.toFixed(0)} h disponibles au-dessus du plancher).`:' ⚠ Aucune enveloppe au-dessus de son plancher : le lissage entamera une marge cible.'}</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:#f0f6ff;border:1px solid #d3e3fb;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:14px">
+          <strong>Répartir</strong>
+          <input type="number" name="lissageH" value="${esc(state.lissageH||'')}" placeholder="0" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px;font-weight:700"> h
+          <span style="color:var(--sub)">sur ${selected.length} chantier(s) coché(s)</span>
+        </div>
+        <button class="btn btn-primary btn-sm" data-action="lissApply" ${simH<=0||!selected.length?'disabled':''}>${svgIcon(ico.spark,13)} Répartir sans plomber</button>
+        <div style="margin-left:auto;font-size:12px;color:var(--sub)">Capacité sélectionnée : <strong style="color:var(--acc)">≈ ${selCapH.toFixed(0)} h</strong> / portefeuille ${totCapH.toFixed(0)} h</div>
+      </div>
+      ${rep?`<div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px;background:${rep.sature?'#fff8ec':'#eafaf0'};border:1px solid ${rep.sature?'#ffe0b2':'#b6e6c8'};color:${rep.sature?'#8a5a00':'var(--pos)'};padding:9px 11px;border-radius:8px">
+        ${rep.sature
+          ?`⚠ ${rep.place.toFixed(1)} h réparties ; <strong>${rep.reste.toFixed(1)} h ne rentrent pas</strong> sans faire passer un chantier sous son plancher. Ajoutez un chantier, baissez un plancher, ou pointez le reste ailleurs.`
+          :`✅ ${rep.place.toFixed(1)} h réparties : aucun chantier ne passe sous son plancher. Voir la colonne « À pointer » ci-dessous.`}
+      </div>`:'<div class="note" style="text-transform:none;letter-spacing:0;margin-bottom:10px">Cochez les chantiers éligibles, saisissez les heures à absorber, puis « Répartir ». L\'algo remplit d\'abord ceux qui ont le plus de réserve, sans qu\'aucun ne descende sous son plancher de marge.</div>'}
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Chantier</th><th>État</th><th>Marge actuelle</th><th>Réserve</th><th>Capacité</th><th>h ce mois</th>${simH>0?`<th>Si +${simH} h ici</th>`:''}<th></th></tr></thead>
+        <thead><tr><th style="width:34px"></th><th>Chantier</th><th>État</th><th>Marge actuelle</th><th>Réserve</th><th>Capacité</th>${rep?'<th>À pointer</th><th>Marge après</th>':'<th>h ce mois</th>'}<th></th></tr></thead>
         <tbody>
         ${rows.map(({ch,env})=>{
           const hM=hoursMonth(ch.d,mk);
           const gauge=Math.max(0,Math.min(100,env.plancher>0?env.margePct/env.plancher*100:0));
-          const simPct=simH>0&&env.recettes>0?(env.reserve-simH*env.txH)/env.recettes*100:null;
-          return`<tr>
+          const checked=!!sel[ch.id];const alloc=allocById[ch.id]||0;
+          const after=alloc>0&&env.recettes>0?(env.reserve-alloc*env.txH)/env.recettes*100:null;
+          return`<tr style="${checked&&env.capH>0?'':'opacity:.55'}">
+            <td style="text-align:center"><input type="checkbox" name="lissSel|${ch.id}" ${checked?'checked':''} ${env.capH>0?'':'disabled title="Pas de réserve"'}></td>
             <td class="sticky" style="font-weight:600">${esc(ch.d.ident.nom||'Sans nom')}${(ch.d.ident.otp||'').trim()?`<div style="font-size:10px;color:var(--acc);font-weight:600">${esc(ch.d.ident.otp.trim())}</div>`:''}</td>
             <td>${env.reserveActive?'<span class="badge badge-green">Réserve active</span>':env.travauxFinis?'<span class="badge badge-grey">Terminé</span>':'<span class="badge badge-blue">En cours</span>'}</td>
             <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:8px"><strong style="color:${env.sousPlancher?'var(--warn)':'var(--pos)'}">${pct(env.margePct)}</strong>
-              <div class="prog-bar" style="width:70px;height:5px"><div class="prog-fill" style="width:${gauge}%;background:${env.sousPlancher?'var(--warn)':'var(--pos)'}"></div></div></div>
+              <div class="prog-bar" style="width:60px;height:5px"><div class="prog-fill" style="width:${gauge}%;background:${env.sousPlancher?'var(--warn)':'var(--pos)'}"></div></div></div>
               <div style="font-size:10px;color:var(--sub)">plancher ${env.plancher} %</div></td>
             <td style="font-weight:600;white-space:nowrap;color:${env.reserve<0?'var(--neg)':'var(--text)'}">${eurRaw(env.reserve)}</td>
             <td style="white-space:nowrap;color:${env.capH>0?'var(--acc)':'var(--sub)'};font-weight:600">${env.capH>0?'≈ '+env.capH.toFixed(0)+' h':'0 h'}</td>
-            <td style="white-space:nowrap">${hM>0?hM.toFixed(1)+' h':'—'}</td>
-            ${simH>0?`<td style="white-space:nowrap;font-weight:600;color:${simPct!==null&&simPct>=env.plancher?'var(--pos)':'var(--neg)'}">${simPct!==null?pct(simPct):'—'}${simPct!==null&&simPct>=env.plancher?' ✓':' ⚠'}</td>`:''}
+            ${rep
+              ?`<td style="white-space:nowrap;font-weight:700;color:${alloc>0?'var(--acc)':'var(--sub)'}">${alloc>0?'+ '+alloc.toFixed(1)+' h':'—'}</td>
+                <td style="white-space:nowrap;color:${after!==null?(after>=env.plancher?'var(--pos)':'var(--neg)'):'var(--sub)'}">${after!==null?pct(after)+(after>=env.plancher?' ✓':' ⚠'):'—'}</td>`
+              :`<td style="white-space:nowrap">${hM>0?hM.toFixed(1)+' h':'—'}</td>`}
             <td><button class="btn btn-ghost btn-sm" data-action="navTo" data-ch="${ch.id}" data-scr="${ch.d.type==='petite'?'home':'heures'}">Pointer →</button></td>
           </tr>`;}).join('')}
         </tbody>
       </table></div>
-      ${simH>0?`<div class="note" style="text-transform:none;letter-spacing:0;margin-top:8px">La colonne « Si +${simH} h ici » montre la marge du chantier si vous y pointez la totalité des ${simH} h (coût = h × taux horaire du chantier). ✓ = reste au-dessus de son plancher.</div>`:''}
       </div>`;})()}
 
     <div class="kpi-card" style="margin-bottom:14px">
