@@ -89,20 +89,24 @@ body{font-family:'Public Sans',system-ui,-apple-system,sans-serif;font-size:13.5
 
 /* ── Nav rail ── */
 #nav-rail{
-  width:64px;background:var(--nav);display:flex;flex-direction:column;
-  align-items:center;padding:8px 0;gap:2px;flex-shrink:0;overflow-y:auto;
+  width:76px;background:var(--nav);display:flex;flex-direction:column;
+  align-items:center;padding:14px 0;gap:6px;flex-shrink:0;overflow-y:auto;
   border-right:1px solid rgba(255,255,255,.05)}
 #nav-rail .nav-item{
-  position:relative;width:48px;height:46px;border-radius:var(--r-md);border:none;background:transparent;
+  position:relative;width:60px;height:54px;border-radius:var(--r-md);border:none;background:transparent;
   cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;color:#9aa4b1;font-size:9px;font-family:inherit;transition:background .12s,color .12s;
+  gap:5px;color:#9aa4b1;font-size:9.5px;font-family:inherit;transition:background .12s,color .12s;
   text-align:center;padding:0 2px;font-weight:500}
-#nav-rail .nav-item svg{width:17px;height:17px}
+#nav-rail .nav-item svg{width:19px;height:19px}
+#nav-rail .nav-item.child{width:60px;height:44px;font-size:9px;color:#828d9c}
+#nav-rail .nav-item.child svg{width:16px;height:16px}
 #nav-rail .nav-item:hover{background:rgba(255,255,255,.06);color:#e7eaee}
 #nav-rail .nav-item.active{background:rgba(37,99,235,.16);color:#fff}
 #nav-rail .nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
   width:3px;height:20px;border-radius:0 2px 2px 0;background:var(--acc)}
-#nav-rail .nav-sep{width:30px;height:1px;background:rgba(255,255,255,.1);margin:4px 0}
+#nav-rail .nav-sep{width:36px;height:1px;background:rgba(255,255,255,.1);margin:7px 0}
+#nav-rail .nav-group{width:100%;display:flex;flex-direction:column;align-items:center;gap:4px}
+#nav-rail .nav-item.more-toggle.open{color:#e7eaee;background:rgba(255,255,255,.04)}
 /* Menu latéral large (écrans applicatifs) */
 #nav-rail.wide{width:210px;align-items:stretch;padding:12px 10px;gap:1px}
 #nav-rail.wide .nav-item{width:auto;height:auto;flex-direction:row;justify-content:flex-start;
@@ -3246,10 +3250,11 @@ function depensesEngageesCard(d,c){
 // Par ouvrage : quantité réalisée, heures passées, rendement réel vs prévu,
 // temps unitaire et coût de main d'œuvre. Remplace le budget vs réel par poste.
 function cadenceCard(d,c){
-  const entries=d.heuresEntries||[];
+  // Les ouvrages sont repris du planning : chaque tâche = un ouvrage.
+  const tasks=(d.planning||[]).map((t,i)=>({t,i})).filter(x=>x.t.tache);
   let totH=0,totCout=0;
-  const rows=entries.map((e,i)=>{
-    const h=n(e.heures),q=n(e.qte),prev=n(e.cadencePrev),tx=c.txH;
+  const rows=tasks.map(({t,i})=>{
+    const h=n(t.heuresReal),q=n(t.qteReal),prev=n(t.cadencePrev),tx=c.txH;
     const rend=h>0?q/h:0;                 // rendement réel (u/h)
     const tps=q>0?h/q:0;                  // temps unitaire (h/u)
     const cout=h*tx;                       // coût MO
@@ -3258,31 +3263,36 @@ function cadenceCard(d,c){
     totH+=h;totCout+=cout;
     const ecartColor=ecart>=0?'var(--pos)':'var(--neg)';
     return`<tr>
-      <td><input type="text" name="heuresEntries.${i}.ouvrage" value="${esc(e.ouvrage)}" style="width:140px" placeholder="Ouvrage / tâche"></td>
-      <td><input type="text" name="heuresEntries.${i}.unite" value="${esc(e.unite)}" style="width:55px" placeholder="m², ml…"></td>
-      <td><input type="number" name="heuresEntries.${i}.qte" value="${e.qte||''}" style="width:70px" placeholder="0"></td>
-      <td><input type="number" name="heuresEntries.${i}.heures" value="${e.heures||''}" style="width:65px" placeholder="0"> h</td>
+      <td class="sticky" style="min-width:150px">
+        <div style="font-weight:600">${esc(t.tache)}</div>
+        ${t.lot?`<div style="font-size:11px;color:var(--sub)">${esc(t.lot)}</div>`:''}
+      </td>
+      <td><input type="text" name="planning.${i}.unite" value="${esc(t.unite||'')}" style="width:60px" placeholder="m², ml…"></td>
+      <td><input type="number" name="planning.${i}.qteReal" value="${t.qteReal||''}" style="width:70px" placeholder="0"></td>
+      <td><input type="number" name="planning.${i}.heuresReal" value="${t.heuresReal||''}" style="width:65px" placeholder="0"> h</td>
       <td class="auto" style="font-weight:600">${rend>0?num2(rend):'—'}</td>
-      <td><input type="number" name="heuresEntries.${i}.cadencePrev" value="${e.cadencePrev||''}" style="width:60px" placeholder="0"></td>
+      <td><input type="number" name="planning.${i}.cadencePrev" value="${t.cadencePrev||''}" style="width:60px" placeholder="0"></td>
       <td class="auto" style="font-weight:600;color:${prev>0?ecartColor:'var(--sub)'}">${prev>0?(ecart>=0?'+':'')+ecart.toFixed(0)+'%':'—'}</td>
       <td class="auto">${tps>0?num2(tps):'—'}</td>
       <td class="auto">${cout>0?eurRaw(cout):'—'}</td>
       <td class="auto">${coutU>0?eurRaw(coutU):'—'}</td>
-      <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="heuresEntries" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
     </tr>`;
   }).join('');
   return`
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title" style="margin-bottom:6px">Suivi des cadences & heures par ouvrage</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <div class="card-title" style="margin:0">Suivi des cadences & heures par ouvrage</div>
+        <button class="btn btn-ghost btn-sm" data-screen="planning">${svgIcon(ico.plan,13)} Gérer les ouvrages (Planning)</button>
+      </div>
       <div style="font-size:11px;color:var(--sub);margin-bottom:10px">
-        Rendement réel = quantité ÷ heures (dans l'unité de l'ouvrage). Comparez-le à la cadence prévue pour repérer les dérives de productivité. Coût MO = heures × ${c.txH} €/h.
+        Les ouvrages sont <b>repris automatiquement du planning</b>. Renseignez ici la quantité réalisée et les heures passées : rendement réel = quantité ÷ heures. Coût MO = heures × ${c.txH} €/h.
       </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Ouvrage</th><th>Unité</th><th>Qté réal.</th><th>Heures</th><th>Rendt réel<br><span style="font-weight:400">(u/h)</span></th><th>Cadence prévue<br><span style="font-weight:400">(u/h)</span></th><th>Écart</th><th>Temps unit.<br><span style="font-weight:400">(h/u)</span></th><th>Coût MO</th><th>Coût / u</th><th></th></tr></thead>
-          <tbody>${rows||'<tr><td colspan="11" style="text-align:center;color:var(--sub);padding:16px">Aucun ouvrage suivi — cliquez « Ajouter ».</td></tr>'}</tbody>
-          <tfoot><tr style="background:#f5f6f8;font-weight:700">
-            <td colspan="3">Total</td>
+          <thead><tr><th>Ouvrage (planning)</th><th>Unité</th><th>Qté réal.</th><th>Heures</th><th>Rendt réel<br><span style="font-weight:400">(u/h)</span></th><th>Cadence prévue<br><span style="font-weight:400">(u/h)</span></th><th>Écart</th><th>Temps unit.<br><span style="font-weight:400">(h/u)</span></th><th>Coût MO</th><th>Coût / u</th></tr></thead>
+          <tbody>${rows||'<tr><td colspan="10" style="text-align:center;color:var(--sub);padding:16px">Aucune tâche dans le planning. Ajoutez des tâches dans <b>Planning</b> : elles apparaîtront ici comme ouvrages à suivre.</td></tr>'}</tbody>
+          <tfoot><tr style="background:var(--surface);font-weight:700">
+            <td class="sticky" colspan="3" style="background:var(--surface)">Total</td>
             <td>${totH>0?totH+' h':'—'}</td>
             <td colspan="4"></td>
             <td>${totCout>0?eurRaw(totCout):'—'}</td>
@@ -3290,7 +3300,6 @@ function cadenceCard(d,c){
           </tr></tfoot>
         </table>
       </div>
-      <button class="add-row-btn" data-action="addRow" data-list="heuresEntries">${svgIcon(ico.plus,13)} Ajouter un ouvrage</button>
     </div>
   `;
 }
@@ -3785,7 +3794,9 @@ function renderST(d,c){
 
 // Fournisseurs
 function renderFournisseurs(d,c){
-  const rows=d.fournisseurs.map((f,i)=>`<tr>
+  const hasDetail=f=>!!(f.contact||f.telephone||f.email||f.dateCommande||f.conditions||f.note);
+  const rows=d.fournisseurs.map((f,i)=>{
+    const main=`<tr>
     <td><input type="text" name="fournisseurs.${i}.fournisseur" value="${esc(f.fournisseur)}" style="width:130px"></td>
     <td><input type="text" name="fournisseurs.${i}.designation" value="${esc(f.designation)}" style="width:150px"></td>
     <td><select name="fournisseurs.${i}.categorie">
@@ -3800,8 +3811,25 @@ function renderFournisseurs(d,c){
     <td><select name="fournisseurs.${i}.statut">
       ${['—','En commande','Livré','Litigieux'].map(v=>`<option${f.statut===v?' selected':''}>${v}</option>`).join('')}
     </select></td>
-    <td><button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="fournisseurs" data-idx="${i}">${svgIcon(ico.trash,13)}</button></td>
-  </tr>`).join('');
+    <td style="white-space:nowrap">
+      <button class="detail-expand-btn" data-action="toggleDetail" data-key="fourn${i}" title="Détail fournisseur">▼ Détail</button>
+      <button class="btn btn-danger btn-icon btn-sm" data-action="delRow" data-list="fournisseurs" data-idx="${i}">${svgIcon(ico.trash,13)}</button>
+    </td>
+  </tr>`;
+    const detail=`<tr id="detail-row-fourn${i}" class="detail-row" style="display:${hasDetail(f)?'table-row':'none'}">
+    <td colspan="9">
+      <div class="form-grid" style="max-width:820px">
+        <div class="form-field"><label class="form-label">Contact</label><input class="form-input" type="text" name="fournisseurs.${i}.contact" value="${esc(f.contact||'')}" placeholder="Nom du contact"></div>
+        <div class="form-field"><label class="form-label">Téléphone</label><input class="form-input" type="tel" name="fournisseurs.${i}.telephone" value="${esc(f.telephone||'')}" placeholder="06…"></div>
+        <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="fournisseurs.${i}.email" value="${esc(f.email||'')}" placeholder="contact@fournisseur.fr"></div>
+        <div class="form-field"><label class="form-label">Date de commande</label><input class="form-input" type="date" name="fournisseurs.${i}.dateCommande" value="${f.dateCommande||''}"></div>
+        <div class="form-field"><label class="form-label">Conditions de règlement</label><input class="form-input" type="text" name="fournisseurs.${i}.conditions" value="${esc(f.conditions||'')}" placeholder="30 j fin de mois…"></div>
+      </div>
+      <div class="form-field" style="margin-top:10px;max-width:820px"><label class="form-label">Observations</label><textarea class="form-textarea" name="fournisseurs.${i}.note" rows="2" placeholder="Litige, relance, remarque…">${esc(f.note||'')}</textarea></div>
+    </td>
+  </tr>`;
+    return main+detail;
+  }).join('');
   return`
     <div class="page-head"><h1 class="page-title">Fournisseurs</h1>${csvBtn('fournisseurs')}</div>
     <div class="kpi-strip">
@@ -5799,12 +5827,19 @@ const NAV_ITEMS=[
   {id:'fournisseurs',icon:ico.fourn,label:'Fourn.',screen:'fournisseurs'},
   {id:'planning',icon:ico.plan,label:'Planning',screen:'planning'},
   {id:'heures',icon:ico.heure,label:'Heures',screen:'heures'},
-  {id:'reserves',icon:ico.res,label:'Réserves',screen:'reserves'},
-  {id:'ts',icon:ico.ts,label:'TS/Aléas',screen:'ts'},
-  {id:'cr',icon:ico.cr,label:'CR',screen:'cr'},
+  {more:true,label:'Plus',items:[
+    {id:'reserves',icon:ico.res,label:'Réserves',screen:'reserves'},
+    {id:'ts',icon:ico.ts,label:'TS/Aléas',screen:'ts'},
+    {id:'cr',icon:ico.cr,label:'CR',screen:'cr'},
+  ]},
   {sep:true},
   {id:'checklist',icon:ico.check,label:'Checklist',screen:'checklist'},
 ];
+const ICO_DOTS='<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>';
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-action="toggleNavMore"]');
+  if(b){state.navMoreOpen=!state.navMoreOpen;render();}
+});
 
 function renderNav(){
   const rail=document.getElementById('nav-rail');
@@ -5826,6 +5861,18 @@ function renderNav(){
     :NAV_ITEMS;
   rail.innerHTML=items.map(item=>{
     if(item.sep)return'<div class="nav-sep"></div>';
+    if(item.more){
+      const childActive=item.items.some(c=>c.screen===state.screen);
+      const open=state.navMoreOpen||childActive;
+      const toggle=`<button class="nav-item more-toggle${open?' open':''}" data-action="toggleNavMore" title="Réserves · TS/Aléas · CR" aria-expanded="${open?'true':'false'}">
+        ${svgIcon(ICO_DOTS,18)}<span class="nav-tip">${open?'Moins':'Plus'}</span></button>`;
+      const kids=open?item.items.map(c=>{
+        const a=state.screen===c.screen;
+        return`<button class="nav-item child${a?' active':''}" data-screen="${c.screen}" title="${c.label}">
+          ${svgIcon(c.icon,16)}<span class="nav-tip">${c.label}</span></button>`;
+      }).join(''):'';
+      return`<div class="nav-group">${toggle}${kids}</div>`;
+    }
     const active=state.screen===item.screen;
     return`<button class="nav-item${active?' active':''}" data-screen="${item.screen}" title="${item.label}">
       ${svgIcon(item.icon,18)}
