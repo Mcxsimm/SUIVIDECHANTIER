@@ -599,7 +599,7 @@ body.dark .petite-banner{border-color:#25406e}
 
 <script>
 'use strict';
-const APP_VERSION='3.0';
+const APP_VERSION='3.1';
 // ─── Utilities ───────────────────────────────────────────────────────────────
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const n=x=>{const v=parseFloat(x);return isNaN(v)?0:v};
@@ -2430,6 +2430,108 @@ document.addEventListener('keydown',e=>{
 
 // ─── More screen renderers ────────────────────────────────────────────────────
 
+// Planning — diagramme de Gantt visuel (lecture ; l'édition reste dans le tableau)
+function ganttChart(d){
+  const parse=s=>{const dt=new Date(s+'T12:00');return isNaN(dt)?null:dt;};
+  const tasks=(d.planning||[]).filter(t=>t.tache&&t.debut&&t.fin&&parse(t.debut)&&parse(t.fin));
+  const jalons=(d.jalons||[]).filter(j=>j.nom&&(j.datePrev||j.dateReel));
+  const pts=[];
+  tasks.forEach(t=>{const a=parse(t.debut),b=parse(t.fin);if(a)pts.push(+a);if(b)pts.push(+b);});
+  jalons.forEach(j=>{const a=parse(j.datePrev),b=parse(j.dateReel);if(a)pts.push(+a);if(b)pts.push(+b);});
+  if(!pts.length){
+    return`<div class="card" style="margin-bottom:14px"><div class="card-title">Planning Gantt</div>
+      <div style="color:var(--sub);font-size:13px;padding:6px 0">Renseignez une date de <b>début</b> et de <b>fin</b> sur vos tâches pour générer automatiquement le diagramme de Gantt.</div></div>`;
+  }
+  const DAY=86400000;
+  const MOIS_G=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  let min=new Date(Math.min.apply(null,pts)),max=new Date(Math.max.apply(null,pts));
+  min=new Date(min.getFullYear(),min.getMonth(),1);
+  max=new Date(max.getFullYear(),max.getMonth()+1,0);
+  const totalDays=Math.max(1,Math.round((max-min)/DAY)+1);
+  const pxDay=Math.min(16,Math.max(5,Math.round(820/totalDays)));
+  const LBL=182,trackW=totalDays*pxDay;
+  const today=new Date();today.setHours(12,0,0,0);
+  const off=dt=>Math.round((dt-min)/DAY);
+  // En-tête mois
+  let months='';const mc=new Date(min);
+  while(mc<=max){
+    const mStart=new Date(mc.getFullYear(),mc.getMonth(),1);
+    const mEnd=new Date(mc.getFullYear(),mc.getMonth()+1,0);
+    const w=(Math.min(totalDays-1,off(mEnd))-Math.max(0,off(mStart))+1)*pxDay;
+    months+=`<div style="width:${w}px;flex-shrink:0;border-left:1px solid var(--border);padding:5px 7px;font-size:11px;font-weight:700;color:var(--sub);text-transform:capitalize;box-sizing:border-box">${MOIS_G[mc.getMonth()]} ${String(mc.getFullYear()).slice(2)}</div>`;
+    mc.setMonth(mc.getMonth()+1);
+  }
+  const colOf=t=>{const st=t.statut||'',av=n(t.avancement);
+    if(st==='Terminé'||av>=100)return'var(--pos)';
+    if(st==='En retard'||(parse(t.fin)<today&&av<100))return'var(--neg)';
+    if(st==='Non démarré'||av<=0)return'var(--neu)';
+    return'var(--acc)';};
+  // Groupement par lot
+  const groups={};tasks.forEach(t=>{const l=(t.lot||'').trim()||'Général';(groups[l]=groups[l]||[]).push(t);});
+  let rows='';
+  Object.keys(groups).forEach(lot=>{
+    rows+=`<div style="display:flex;border-bottom:1px solid var(--border)">
+      <div style="width:${LBL}px;flex-shrink:0;padding:5px 10px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--sub);position:sticky;left:0;background:var(--surface);z-index:2">${esc(lot)}</div>
+      <div style="width:${trackW}px;flex-shrink:0;background:var(--surface)"></div></div>`;
+    groups[lot].forEach(t=>{
+      const a=parse(t.debut),b=parse(t.fin);
+      const o=off(a),dur=Math.max(1,off(b)-o+1),left=o*pxDay,w=dur*pxDay;
+      const col=colOf(t),av=Math.max(0,Math.min(100,n(t.avancement)));
+      rows+=`<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;min-height:33px">
+        <div style="width:${LBL}px;flex-shrink:0;padding:5px 10px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--card);z-index:2" title="${esc(t.tache)}${t.responsable?' — '+esc(t.responsable):''}">${esc(t.tache)}</div>
+        <div style="width:${trackW}px;flex-shrink:0;position:relative;height:33px">
+          <div title="${esc(t.tache)} · ${fmtDateFR(t.debut)} → ${fmtDateFR(t.fin)} · ${av}%" style="position:absolute;top:7px;left:${left}px;width:${w}px;height:19px;background:color-mix(in srgb,${col} 16%,transparent);border:1px solid ${col};border-radius:5px;overflow:hidden;box-shadow:var(--card-sh)">
+            <div style="height:100%;width:${av}%;background:${col};opacity:.9"></div>
+            <span style="position:absolute;top:0;left:6px;line-height:19px;font-size:10px;font-weight:700;color:var(--text);white-space:nowrap">${w>34&&av>0?av+'%':''}</span>
+          </div>
+        </div>
+      </div>`;
+    });
+  });
+  let jalonRow='';
+  if(jalons.length){
+    let marks='';
+    jalons.forEach(j=>{
+      const dt=parse(j.dateReel||j.datePrev);if(!dt||dt<min||dt>max)return;
+      const reached=!!j.dateReel,overdue=!reached&&parse(j.datePrev)&&parse(j.datePrev)<today;
+      const col=reached?'var(--pos)':overdue?'var(--neg)':'var(--warn)';
+      marks+=`<div title="${esc(j.nom)} · ${fmtDateFR(j.dateReel||j.datePrev)}" style="position:absolute;top:6px;left:${off(dt)*pxDay-6}px;width:13px;height:13px;background:${col};transform:rotate(45deg);border:1.5px solid var(--card)"></div>`;
+    });
+    jalonRow=`<div style="display:flex;border-bottom:1px solid var(--border);align-items:center;min-height:27px">
+      <div style="width:${LBL}px;flex-shrink:0;padding:4px 10px;font-size:11px;font-weight:700;color:var(--sub);position:sticky;left:0;background:var(--surface);z-index:2">◆ Jalons</div>
+      <div style="width:${trackW}px;flex-shrink:0;position:relative;height:27px;background:var(--surface)">${marks}</div>
+    </div>`;
+  }
+  let todayMark='';
+  if(today>=min&&today<=max){
+    const x=LBL+off(today)*pxDay;
+    todayMark=`<div style="position:absolute;top:0;bottom:0;left:${x}px;width:2px;background:var(--neg);opacity:.5;z-index:3;pointer-events:none"></div>`;
+  }
+  const leg=(c,l)=>`<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px"></span>${l}</span>`;
+  return`
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <div class="card-title" style="margin:0">Planning Gantt <span class="note" style="font-size:11px;margin-left:6px;text-transform:none;letter-spacing:0">— généré depuis les dates des tâches</span></div>
+        <div style="display:flex;gap:11px;font-size:11px;color:var(--sub);flex-wrap:wrap">
+          ${leg('var(--acc)','En cours')} ${leg('var(--pos)','Terminé')} ${leg('var(--neg)','En retard')} ${leg('var(--neu)','À venir')} ${leg('var(--warn)','◆ Jalon')}
+        </div>
+      </div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">
+        <div style="min-width:${LBL+trackW}px">
+          <div style="display:flex;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:4">
+            <div style="width:${LBL}px;flex-shrink:0;padding:5px 10px;font-size:11px;font-weight:700;color:var(--sub);position:sticky;left:0;background:var(--card);z-index:5">Tâche</div>
+            <div style="display:flex">${months}</div>
+          </div>
+          <div style="position:relative">
+            ${rows}
+            ${jalonRow}
+            ${todayMark}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 // Planning
 function renderPlanning(d,c){
   const today=new Date();
@@ -2477,6 +2579,7 @@ function renderPlanning(d,c){
       <div class="kpi-card"><div class="kpi-label">Tâches en retard</div><div class="kpi-value" style="color:${c.alerts.find(a=>a.msg.includes('retard'))? 'var(--neg)':'var(--sub)'}">${d.planning.filter(t=>t.fin&&t.statut!=='Terminé'&&new Date(t.fin)<today).length}</div></div>
       <div class="kpi-card"><div class="kpi-label">Jalons atteints</div><div class="kpi-value">${d.jalons.filter(j=>j.dateReel).length} / ${d.jalons.length}</div></div>
     </div>
+    ${ganttChart(d)}
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Tâches & planning <span class="note" style="font-size:11px;margin-left:6px">— vue détaillée (voir aussi la rubrique Tâches)</span></div>
       <div class="tbl-wrap">
